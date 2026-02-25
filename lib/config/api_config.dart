@@ -7,8 +7,9 @@ class ApiConfig {
   static const String mapTilerKey = 'xsEVv6FORhLcPcw7bN85';
 
   // Map tile URL
-  static String get mapTileUrl =>
-      'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$mapTilerKey';
+  static String get mapTileUrl => mapTilerKey.trim().isEmpty
+      ? 'https://tile.openstreetmap.org/{z}/{x}/{y}.png'
+      : 'https://api.maptiler.com/maps/streets-v2/{z}/{x}/{y}.png?key=$mapTilerKey';
 
   // Sri Lanka Bounding Box
   static const double slSouth = 5.916;

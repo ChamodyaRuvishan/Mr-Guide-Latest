@@ -6,18 +6,23 @@ import '../models/place.dart';
 
 class MapService {
   /// Search places using MapTiler Geocoding API (primary)
-  static Future<List<Place>> searchPlaces(String query,
-      {int limit = 15}) async {
+  static Future<List<Place>> searchPlaces(
+    String query, {
+    int limit = 15,
+  }) async {
     try {
-      final url = Uri.parse(
-        'https://api.maptiler.com/geocoding/${Uri.encodeComponent('$query, Sri Lanka')}.json',
-      ).replace(queryParameters: {
-        'key': ApiConfig.mapTilerKey,
-        'bbox':
-            '${ApiConfig.slWest},${ApiConfig.slSouth},${ApiConfig.slEast},${ApiConfig.slNorth}',
-        'limit': '$limit',
-        'language': 'en',
-      });
+      final url =
+          Uri.parse(
+            'https://api.maptiler.com/geocoding/${Uri.encodeComponent('$query, Sri Lanka')}.json',
+          ).replace(
+            queryParameters: {
+              'key': ApiConfig.mapTilerKey,
+              'bbox':
+                  '${ApiConfig.slWest},${ApiConfig.slSouth},${ApiConfig.slEast},${ApiConfig.slNorth}',
+              'limit': '$limit',
+              'language': 'en',
+            },
+          );
 
       final response = await http.get(url);
 
@@ -42,13 +47,15 @@ class MapService {
             final coords = feature['geometry']['coordinates'];
             return Place(
               id: feature['id']?.toString() ?? 'place-$i',
-              name: feature['text'] ??
+              name:
+                  feature['text'] ??
                   (feature['place_name']?.toString().split(',')[0] ??
                       'Unknown'),
               lat: (coords[1] as num).toDouble(),
               lng: (coords[0] as num).toDouble(),
               address: feature['place_name'] ?? '',
-              type: feature['properties']?['category'] ??
+              type:
+                  feature['properties']?['category'] ??
                   (feature['place_type'] is List
                       ? feature['place_type'][0]
                       : 'place'),
@@ -66,11 +73,12 @@ class MapService {
   }
 
   /// Fallback search with Nominatim (OpenStreetMap)
-  static Future<List<Place>> _searchWithNominatim(String query,
-      {int limit = 15}) async {
+  static Future<List<Place>> _searchWithNominatim(
+    String query, {
+    int limit = 15,
+  }) async {
     try {
-      final url =
-          Uri.parse('https://nominatim.openstreetmap.org/search').replace(
+      final url = Uri.parse('https://nominatim.openstreetmap.org/search').replace(
         queryParameters: {
           'q': '$query, Sri Lanka',
           'format': 'json',
@@ -83,10 +91,10 @@ class MapService {
         },
       );
 
-      final response = await http.get(url, headers: {
-        'Accept-Language': 'en',
-        'User-Agent': 'MrGuide/1.0',
-      });
+      final response = await http.get(
+        url,
+        headers: {'Accept-Language': 'en', 'User-Agent': 'MrGuide/1.0'},
+      );
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body) as List;
@@ -95,7 +103,8 @@ class MapService {
           final item = entry.value;
           return Place(
             id: item['place_id']?.toString() ?? 'place-$i',
-            name: item['name'] ??
+            name:
+                item['name'] ??
                 item['display_name']?.toString().split(',')[0] ??
                 'Unknown',
             lat: double.parse(item['lat'].toString()),
@@ -120,21 +129,19 @@ class MapService {
     String travelMode = 'car',
   }) async {
     try {
-      String profile = 'driving';
-      if (travelMode == 'walk') {
-        profile = 'foot';
-      } else if (travelMode == 'bike') {
-        profile = 'bike';
-      }
+      final profile = _resolveOsrmProfile(travelMode);
 
       final coordinates = '$startLng,$startLat;$endLng,$endLat';
-      final url = Uri.parse(
-        'https://router.project-osrm.org/route/v1/$profile/$coordinates',
-      ).replace(queryParameters: {
-        'overview': 'full',
-        'geometries': 'geojson',
-        'steps': 'true',
-      });
+      final url =
+          Uri.parse(
+            'https://router.project-osrm.org/route/v1/$profile/$coordinates',
+          ).replace(
+            queryParameters: {
+              'overview': 'full',
+              'geometries': 'geojson',
+              'steps': 'true',
+            },
+          );
 
       final response = await http.get(url);
 
@@ -144,19 +151,19 @@ class MapService {
 
         if (routes != null && routes.isNotEmpty) {
           final routeData = routes[0];
-          final coordinates =
-              routeData['geometry']['coordinates'] as List;
+          final coordinates = routeData['geometry']['coordinates'] as List;
           final routePoints = coordinates
-              .map((coord) => [
-                    (coord[1] as num).toDouble(),
-                    (coord[0] as num).toDouble(),
-                  ])
+              .map(
+                (coord) => [
+                  (coord[1] as num).toDouble(),
+                  (coord[0] as num).toDouble(),
+                ],
+              )
               .toList();
 
-          final distanceKm =
-              ((routeData['distance'] as num) / 1000).toStringAsFixed(1);
-          final durationMin =
-              ((routeData['duration'] as num) / 60).round();
+          final distanceKm = ((routeData['distance'] as num) / 1000)
+              .toStringAsFixed(1);
+          final durationMin = ((routeData['duration'] as num) / 60).round();
 
           List<RouteStep> steps = [];
           final legs = routeData['legs'] as List?;
@@ -168,8 +175,7 @@ class MapService {
               return RouteStep(
                 id: i,
                 instruction: _formatInstruction(step),
-                distance:
-                    ((step['distance'] as num) / 1000).toStringAsFixed(2),
+                distance: ((step['distance'] as num) / 1000).toStringAsFixed(2),
                 duration: ((step['duration'] as num) / 60).round(),
               );
             }).toList();
@@ -186,6 +192,20 @@ class MapService {
       return null;
     } catch (e) {
       return null;
+    }
+  }
+
+  static String _resolveOsrmProfile(String travelMode) {
+    switch (travelMode) {
+      case 'walk':
+        return 'walking';
+      case 'bike':
+        return 'cycling';
+      case 'bus':
+      case 'train':
+      case 'car':
+      default:
+        return 'driving';
     }
   }
 
@@ -210,15 +230,17 @@ class MapService {
 
   /// Calculate Haversine distance between two points (km)
   static double calculateDistance(
-      double lat1, double lon1, double lat2, double lon2) {
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
     const R = 6371.0;
     final dLat = _toRad(lat2 - lat1);
     final dLon = _toRad(lon2 - lon1);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
-        cos(_toRad(lat1)) *
-            cos(_toRad(lat2)) *
-            sin(dLon / 2) *
-            sin(dLon / 2);
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
+        cos(_toRad(lat1)) * cos(_toRad(lat2)) * sin(dLon / 2) * sin(dLon / 2);
     final c = 2 * atan2(sqrt(a), sqrt(1 - a));
     return R * c;
   }

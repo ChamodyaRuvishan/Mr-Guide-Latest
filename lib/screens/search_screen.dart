@@ -41,6 +41,8 @@ class _SearchScreenState extends State<SearchScreen> {
 
   // Map
   LatLng _mapCenter = LatLng(ApiConfig.defaultLat, ApiConfig.defaultLng);
+  bool _mapReady = false;
+  VoidCallback? _pendingMapAction;
 
   // Panel state
   bool _showPanel = true;
@@ -78,6 +80,7 @@ class _SearchScreenState extends State<SearchScreen> {
           _mapCenter = _startLocation!;
           _gettingLocation = false;
         });
+        _moveMapTo(_startLocation!, zoom: 13);
       } else {
         _setDefaultLocation();
       }
@@ -93,6 +96,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _searchStatus = 'Location denied. Using Colombo as default start.';
       _gettingLocation = false;
     });
+    _moveMapTo(_startLocation!, zoom: 11);
   }
 
   Future<void> _searchPlaces(String query) async {
@@ -127,14 +131,14 @@ class _SearchScreenState extends State<SearchScreen> {
 
   void _fitBoundsToPlaces() {
     if (_places.isEmpty) return;
-    try {
+    _runMapAction(() {
       final bounds = LatLngBounds.fromPoints(
         _places.map((p) => LatLng(p.lat, p.lng)).toList(),
       );
       _mapController.fitCamera(
         CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
       );
-    } catch (_) {}
+    });
   }
 
   Future<void> _searchStartLocation(String query) async {
@@ -159,12 +163,15 @@ class _SearchScreenState extends State<SearchScreen> {
       _routeDuration = null;
       _directions = [];
     });
+    _moveMapTo(_startLocation!, zoom: 13);
   }
 
   Future<void> _getDirections(Place place) async {
     if (_startLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please set your starting location first')),
+        const SnackBar(
+          content: Text('Please set your starting location first'),
+        ),
       );
       setState(() => _showStartSearch = true);
       return;
@@ -201,12 +208,12 @@ class _SearchScreenState extends State<SearchScreen> {
       });
 
       // Fit to route
-      try {
+      _runMapAction(() {
         final bounds = LatLngBounds.fromPoints(routePoints);
         _mapController.fitCamera(
           CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
         );
-      } catch (_) {}
+      });
     } else {
       setState(() => _routeLoading = false);
       if (mounted) {
@@ -225,6 +232,22 @@ class _SearchScreenState extends State<SearchScreen> {
       _routeDuration = null;
       _directions = [];
     });
+  }
+
+  void _moveMapTo(LatLng point, {double zoom = 13}) {
+    _runMapAction(() {
+      _mapController.move(point, zoom);
+    });
+  }
+
+  void _runMapAction(VoidCallback action) {
+    if (_mapReady) {
+      try {
+        action();
+      } catch (_) {}
+      return;
+    }
+    _pendingMapAction = action;
   }
 
   @override
@@ -270,8 +293,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 ? const SizedBox()
                 : FloatingActionButton.small(
                     backgroundColor: const Color(0xFF1B2838),
-                    child:
-                        const Icon(Icons.expand_less, color: Color(0xFFFFD700)),
+                    child: const Icon(
+                      Icons.expand_less,
+                      color: Color(0xFFFFD700),
+                    ),
                     onPressed: () => setState(() => _showPanel = true),
                   ),
           ),
@@ -298,6 +323,16 @@ class _SearchScreenState extends State<SearchScreen> {
       options: MapOptions(
         initialCenter: _mapCenter,
         initialZoom: 8,
+        onMapReady: () {
+          _mapReady = true;
+          final action = _pendingMapAction;
+          _pendingMapAction = null;
+          if (action != null) {
+            try {
+              action();
+            } catch (_) {}
+          }
+        },
       ),
       children: [
         TileLayer(
@@ -366,8 +401,7 @@ class _SearchScreenState extends State<SearchScreen> {
         height: 30,
         decoration: BoxDecoration(
           color: color,
-          borderRadius:
-              const BorderRadius.only(
+          borderRadius: const BorderRadius.only(
             topLeft: Radius.circular(15),
             topRight: Radius.circular(15),
             bottomLeft: Radius.circular(15),
@@ -376,19 +410,23 @@ class _SearchScreenState extends State<SearchScreen> {
           border: Border.all(color: Colors.white, width: 2),
           boxShadow: [
             BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 6,
-                offset: const Offset(0, 2)),
+              color: Colors.black.withValues(alpha: 0.4),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Center(
           child: Transform.rotate(
             angle: 0.785,
-            child: Text(label,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 11)),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 11,
+              ),
+            ),
           ),
         ),
       ),
@@ -402,9 +440,10 @@ class _SearchScreenState extends State<SearchScreen> {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 10,
-              offset: const Offset(0, 2)),
+            color: Colors.black.withValues(alpha: 0.3),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Row(
@@ -431,10 +470,13 @@ class _SearchScreenState extends State<SearchScreen> {
             const Padding(
               padding: EdgeInsets.all(12),
               child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Color(0xFFFFD700))),
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFFFD700),
+                ),
+              ),
             )
           else
             IconButton(
@@ -456,7 +498,11 @@ class _SearchScreenState extends State<SearchScreen> {
         color: Color(0xFF0D1B2A),
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
-          BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -2)),
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(0, -2),
+          ),
         ],
       ),
       child: ListView(
@@ -498,7 +544,9 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Text(
                 _searchStatus,
                 style: TextStyle(
-                  color: _places.isNotEmpty ? Colors.greenAccent : Colors.white54,
+                  color: _places.isNotEmpty
+                      ? Colors.greenAccent
+                      : Colors.white54,
                   fontSize: 13,
                 ),
               ),
@@ -518,11 +566,15 @@ class _SearchScreenState extends State<SearchScreen> {
                 children: [
                   Icon(Icons.search, color: Colors.white24, size: 48),
                   SizedBox(height: 12),
-                  Text('Search for places in Sri Lanka',
-                      style: TextStyle(color: Colors.white54)),
+                  Text(
+                    'Search for places in Sri Lanka',
+                    style: TextStyle(color: Colors.white54),
+                  ),
                   SizedBox(height: 4),
-                  Text('Try: "Sigiriya", "Galle Fort", "Colombo"',
-                      style: TextStyle(color: Colors.white30, fontSize: 12)),
+                  Text(
+                    'Try: "Sigiriya", "Galle Fort", "Colombo"',
+                    style: TextStyle(color: Colors.white30, fontSize: 12),
+                  ),
                 ],
               ),
             ),
@@ -545,11 +597,14 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             Icon(Icons.location_on, color: Color(0xFF00C853), size: 18),
             SizedBox(width: 6),
-            Text('Your Starting Point',
-                style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              'Your Starting Point',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -572,23 +627,29 @@ class _SearchScreenState extends State<SearchScreen> {
                     shape: BoxShape.circle,
                   ),
                   child: const Center(
-                      child: Text('A',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 12))),
+                    child: Text(
+                      'A',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(_startLocationName,
-                      style:
-                          const TextStyle(color: Colors.white, fontSize: 13)),
+                  child: Text(
+                    _startLocationName,
+                    style: const TextStyle(color: Colors.white, fontSize: 13),
+                  ),
                 ),
                 GestureDetector(
                   onTap: () => setState(() => _showStartSearch = true),
-                  child: const Text('Change',
-                      style: TextStyle(
-                          color: Color(0xFFFFD700), fontSize: 12)),
+                  child: const Text(
+                    'Change',
+                    style: TextStyle(color: Color(0xFFFFD700), fontSize: 12),
+                  ),
                 ),
               ],
             ),
@@ -608,8 +669,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 borderRadius: BorderRadius.circular(10),
                 borderSide: BorderSide.none,
               ),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
               isDense: true,
             ),
             onChanged: _searchStartLocation,
@@ -624,8 +687,7 @@ class _SearchScreenState extends State<SearchScreen> {
               });
             },
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: const Color(0xFF00C853).withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
@@ -633,13 +695,18 @@ class _SearchScreenState extends State<SearchScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.my_location,
-                      color: const Color(0xFF00C853), size: 16),
+                  Icon(
+                    Icons.my_location,
+                    color: const Color(0xFF00C853),
+                    size: 16,
+                  ),
                   const SizedBox(width: 6),
                   Text(
                     _gettingLocation ? 'Getting...' : 'Use My Location',
                     style: const TextStyle(
-                        color: Color(0xFF00C853), fontSize: 12),
+                      color: Color(0xFF00C853),
+                      fontSize: 12,
+                    ),
                   ),
                 ],
               ),
@@ -652,23 +719,29 @@ class _SearchScreenState extends State<SearchScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF1A2942),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: Colors.white.withValues(alpha: 0.1)),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
               ),
               child: Column(
                 children: _startSearchResults.map((result) {
                   return ListTile(
                     dense: true,
-                    title: Text(result.name,
-                        style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500)),
-                    subtitle: Text(result.address,
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 11),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
+                    title: Text(
+                      result.name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    subtitle: Text(
+                      result.address,
+                      style: const TextStyle(
+                        color: Colors.white38,
+                        fontSize: 11,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     onTap: () => _selectStartLocation(result),
                   );
                 }).toList(),
@@ -694,11 +767,14 @@ class _SearchScreenState extends State<SearchScreen> {
           children: [
             Icon(Icons.directions_car, color: Colors.white54, size: 18),
             SizedBox(width: 6),
-            Text('Travel Mode',
-                style: TextStyle(
-                    color: Colors.white70,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600)),
+            Text(
+              'Travel Mode',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -729,18 +805,23 @@ class _SearchScreenState extends State<SearchScreen> {
                   ),
                   child: Column(
                     children: [
-                      Icon(mode['icon'] as IconData,
+                      Icon(
+                        mode['icon'] as IconData,
+                        color: isActive
+                            ? const Color(0xFFFFD700)
+                            : Colors.white38,
+                        size: 20,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        mode['label'] as String,
+                        style: TextStyle(
                           color: isActive
                               ? const Color(0xFFFFD700)
                               : Colors.white38,
-                          size: 20),
-                      const SizedBox(height: 4),
-                      Text(mode['label'] as String,
-                          style: TextStyle(
-                              color: isActive
-                                  ? const Color(0xFFFFD700)
-                                  : Colors.white38,
-                              fontSize: 11)),
+                          fontSize: 11,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -760,7 +841,8 @@ class _SearchScreenState extends State<SearchScreen> {
         color: const Color(0xFF4285F4).withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color: const Color(0xFF4285F4).withValues(alpha: 0.3)),
+          color: const Color(0xFF4285F4).withValues(alpha: 0.3),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,11 +852,14 @@ class _SearchScreenState extends State<SearchScreen> {
               const Icon(Icons.map, color: Color(0xFF4285F4), size: 18),
               const SizedBox(width: 8),
               const Expanded(
-                child: Text('Route Details',
-                    style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14)),
+                child: Text(
+                  'Route Details',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
               ),
               GestureDetector(
                 onTap: _clearRoute,
@@ -790,9 +875,11 @@ class _SearchScreenState extends State<SearchScreen> {
               _endpointBadge('A', const Color(0xFF00C853)),
               const SizedBox(width: 8),
               Expanded(
-                  child: Text(_startLocationName,
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12))),
+                child: Text(
+                  _startLocationName,
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -801,9 +888,11 @@ class _SearchScreenState extends State<SearchScreen> {
               _endpointBadge('B', const Color(0xFF2979FF)),
               const SizedBox(width: 8),
               Expanded(
-                  child: Text(_selectedPlace?.name ?? '',
-                      style: const TextStyle(
-                          color: Colors.white70, fontSize: 12))),
+                child: Text(
+                  _selectedPlace?.name ?? '',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -819,10 +908,10 @@ class _SearchScreenState extends State<SearchScreen> {
                 _travelMode == 'car'
                     ? 'Car'
                     : _travelMode == 'bus'
-                        ? 'Bus'
-                        : _travelMode == 'train'
-                            ? 'Train'
-                            : 'Walk',
+                    ? 'Bus'
+                    : _travelMode == 'train'
+                    ? 'Train'
+                    : 'Walk',
                 'mode',
               ),
             ],
@@ -838,24 +927,33 @@ class _SearchScreenState extends State<SearchScreen> {
       height: 22,
       decoration: BoxDecoration(color: color, shape: BoxShape.circle),
       child: Center(
-          child: Text(label,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 11))),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            fontSize: 11,
+          ),
+        ),
+      ),
     );
   }
 
   Widget _statItem(String value, String label) {
     return Column(
       children: [
-        Text(value,
-            style: const TextStyle(
-                color: Color(0xFFFFD700),
-                fontWeight: FontWeight.bold,
-                fontSize: 18)),
-        Text(label,
-            style: const TextStyle(color: Colors.white38, fontSize: 11)),
+        Text(
+          value,
+          style: const TextStyle(
+            color: Color(0xFFFFD700),
+            fontWeight: FontWeight.bold,
+            fontSize: 18,
+          ),
+        ),
+        Text(
+          label,
+          style: const TextStyle(color: Colors.white38, fontSize: 11),
+        ),
       ],
     );
   }
@@ -875,11 +973,14 @@ class _SearchScreenState extends State<SearchScreen> {
             children: [
               Icon(Icons.list_alt, color: Colors.white54, size: 18),
               SizedBox(width: 8),
-              Text('Turn-by-turn',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13)),
+              Text(
+                'Turn-by-turn',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 13,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -899,19 +1000,29 @@ class _SearchScreenState extends State<SearchScreen> {
                       shape: BoxShape.circle,
                     ),
                     child: Center(
-                        child: Text('${i + 1}',
-                            style: const TextStyle(
-                                color: Colors.white54, fontSize: 10))),
+                      child: Text(
+                        '${i + 1}',
+                        style: const TextStyle(
+                          color: Colors.white54,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(step.instruction,
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 12)),
-                  ),
-                  Text('${step.distance} km',
+                    child: Text(
+                      step.instruction,
                       style: const TextStyle(
-                          color: Colors.white38, fontSize: 11)),
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                  Text(
+                    '${step.distance} km',
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
                 ],
               ),
             );
@@ -961,59 +1072,83 @@ class _SearchScreenState extends State<SearchScreen> {
                 shape: BoxShape.circle,
               ),
               child: Center(
-                  child: Text('${index + 1}',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13))),
+                child: Text(
+                  '${index + 1}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(place.name,
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14)),
+                  Text(
+                    place.name,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
                   const SizedBox(height: 2),
-                  Text(place.address,
-                      style: const TextStyle(
-                          color: Colors.white38, fontSize: 11),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    place.address,
+                    style: const TextStyle(color: Colors.white38, fontSize: 11),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   const SizedBox(height: 4),
                   Row(
                     children: [
                       if (place.type.isNotEmpty)
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: Text(place.type,
-                              style: const TextStyle(
-                                  color: Colors.white38, fontSize: 10)),
+                          child: Text(
+                            place.type,
+                            style: const TextStyle(
+                              color: Colors.white38,
+                              fontSize: 10,
+                            ),
+                          ),
                         ),
                       if (distance != null) ...[
                         const SizedBox(width: 8),
-                        Icon(Icons.location_on,
-                            color: Colors.white38, size: 12),
+                        Icon(
+                          Icons.location_on,
+                          color: Colors.white38,
+                          size: 12,
+                        ),
                         const SizedBox(width: 2),
-                        Text('$distance km',
-                            style: const TextStyle(
-                                color: Colors.white38, fontSize: 11)),
+                        Text(
+                          '$distance km',
+                          style: const TextStyle(
+                            color: Colors.white38,
+                            fontSize: 11,
+                          ),
+                        ),
                       ],
                     ],
                   ),
                 ],
               ),
             ),
-            const Icon(Icons.arrow_forward_ios,
-                color: Colors.white24, size: 16),
+            const Icon(
+              Icons.arrow_forward_ios,
+              color: Colors.white24,
+              size: 16,
+            ),
           ],
         ),
       ),

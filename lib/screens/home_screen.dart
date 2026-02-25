@@ -25,6 +25,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _openSearch([String? query]) {
+    final q = query?.trim();
+    Navigator.pushNamed(
+      context,
+      '/search',
+      arguments: (q == null || q.isEmpty) ? null : q,
+    );
+  }
+
   @override
   void dispose() {
     _searchController.dispose();
@@ -79,14 +88,18 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.white.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(16),
                     border: Border.all(
-                        color: const Color(0xFFFFD700).withValues(alpha: 0.3)),
+                      color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+                    ),
                   ),
                   child: Row(
                     children: [
                       const Padding(
                         padding: EdgeInsets.only(left: 16),
-                        child:
-                            Icon(Icons.search, color: Colors.white54, size: 24),
+                        child: Icon(
+                          Icons.search,
+                          color: Colors.white54,
+                          size: 24,
+                        ),
                       ),
                       Expanded(
                         child: TextField(
@@ -98,7 +111,9 @@ class _HomeScreenState extends State<HomeScreen> {
                             hintStyle: TextStyle(color: Colors.white38),
                             border: InputBorder.none,
                             contentPadding: EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 16),
+                              horizontal: 12,
+                              vertical: 16,
+                            ),
                           ),
                           onSubmitted: _handleSearch,
                         ),
@@ -115,10 +130,14 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 20, vertical: 14),
+                              horizontal: 20,
+                              vertical: 14,
+                            ),
                           ),
-                          child: const Text('Search',
-                              style: TextStyle(fontWeight: FontWeight.bold)),
+                          child: const Text(
+                            'Search',
+                            style: TextStyle(fontWeight: FontWeight.bold),
+                          ),
                         ),
                       ),
                     ],
@@ -132,9 +151,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: Text(
                     'Popular Destinations',
                     style: TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500),
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -145,13 +165,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     return ActionChip(
                       label: Text(dest['name']!),
                       labelStyle: const TextStyle(color: Colors.white),
-                      backgroundColor:
-                          Colors.white.withValues(alpha: 0.1),
+                      backgroundColor: Colors.white.withValues(alpha: 0.1),
                       side: BorderSide(
-                          color: const Color(0xFFFFD700)
-                              .withValues(alpha: 0.3)),
+                        color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+                      ),
                       shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20)),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
                       onPressed: () => _handleSearch(dest['query']!),
                     );
                   }).toList(),
@@ -163,18 +183,21 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icons.map_outlined,
                   'Interactive Maps',
                   'Explore with detailed maps powered by MapTiler',
+                  onTap: _openSearch,
                 ),
                 const SizedBox(height: 12),
                 _buildFeatureCard(
                   Icons.directions_car_outlined,
                   'Route Planning',
                   'Get directions by car, bus, train, or walking',
+                  onTap: () => _openSearch('Colombo'),
                 ),
                 const SizedBox(height: 12),
                 _buildFeatureCard(
                   Icons.location_on_outlined,
                   'Find Places',
                   'Search hotels, restaurants, and attractions',
+                  onTap: () => _openSearch('Hotels in Colombo'),
                 ),
                 const SizedBox(height: 30),
               ],
@@ -185,43 +208,69 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildFeatureCard(IconData icon, String title, String description) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.05),
+  Widget _buildFeatureCard(
+    IconData icon,
+    String title,
+    String description, {
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(16),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFD700).withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(icon, color: const Color(0xFFFFD700), size: 28),
+        splashColor: const Color(0xFFFFD700).withValues(alpha: 0.14),
+        highlightColor: Colors.white.withValues(alpha: 0.05),
+        child: Ink(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFD700).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: const Color(0xFFFFD700), size: 28),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
-                        fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text(description,
-                    style:
-                        const TextStyle(color: Colors.white60, fontSize: 13)),
-              ],
-            ),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      description,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: Colors.white38,
+                size: 16,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
