@@ -3,6 +3,9 @@ import 'package:flutter/services.dart';
 import 'models/user.dart';
 import 'services/auth_service.dart';
 import 'screens/home_screen.dart';
+import 'screens/splash_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/role_selection_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -28,7 +31,6 @@ class MrGuideApp extends StatefulWidget {
 
 class _MrGuideAppState extends State<MrGuideApp> {
   User? _user;
-  bool _loading = true;
 
   @override
   void initState() {
@@ -38,10 +40,11 @@ class _MrGuideAppState extends State<MrGuideApp> {
 
   Future<void> _checkAuth() async {
     final user = await AuthService.getCurrentUser();
-    setState(() {
-      _user = user;
-      _loading = false;
-    });
+    if (mounted) {
+      setState(() {
+        _user = user;
+      });
+    }
   }
 
   void _setUser(User user) {
@@ -55,18 +58,6 @@ class _MrGuideAppState extends State<MrGuideApp> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return MaterialApp(
-        debugShowCheckedModeBanner: false,
-        home: Scaffold(
-          backgroundColor: const Color(0xFF0D1B2A),
-          body: const Center(
-            child: CircularProgressIndicator(color: Color(0xFFFFD700)),
-          ),
-        ),
-      );
-    }
-
     return MaterialApp(
       title: 'Mr. Guide',
       debugShowCheckedModeBanner: false,
@@ -84,13 +75,23 @@ class _MrGuideAppState extends State<MrGuideApp> {
           elevation: 0,
         ),
       ),
-      home: _MainScaffold(
-        user: _user,
-        onLogout: _logout,
-        onLogin: _setUser,
-      ),
+      initialRoute: '/splash',
       onGenerateRoute: (settings) {
         switch (settings.name) {
+          case '/splash':
+            return MaterialPageRoute(builder: (_) => const SplashScreen());
+          case '/onboarding':
+            return MaterialPageRoute(builder: (_) => const OnboardingScreen());
+          case '/role_selection':
+            return MaterialPageRoute(builder: (_) => const RoleSelectionScreen());
+          case '/home':
+            return MaterialPageRoute(
+              builder: (_) => _MainScaffold(
+                user: _user,
+                onLogout: _logout,
+                onLogin: _setUser,
+              ),
+            );
           case '/search':
             final query = settings.arguments as String?;
             return MaterialPageRoute(
@@ -110,11 +111,7 @@ class _MrGuideAppState extends State<MrGuideApp> {
             );
           default:
             return MaterialPageRoute(
-              builder: (_) => _MainScaffold(
-                user: _user,
-                onLogout: _logout,
-                onLogin: _setUser,
-              ),
+              builder: (_) => const SplashScreen(),
             );
         }
       },
