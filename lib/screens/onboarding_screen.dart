@@ -13,12 +13,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   int _currentPage = 0;
 
   final List<OnboardingPage> _pages = [
-    OnboardingPage(
-      icon: Icons.location_on,
-      color: const Color(0xFFFFC107),
-      title: "Welcome to Mr.Guide",
-      message: "Your personal tour guide. Discover places, plan trips, and explore with confidence.",
-    ),
+    // OnboardingPage(
+    //   icon: Icons.location_on,
+    //   color: const Color(0xFFFFC107),
+    //   title: "Welcome to Mr.Guide",
+    //   message: "Your personal tour guide. Discover places, plan trips, and explore with confidence.",
+    // ),
     OnboardingPage(
       icon: Icons.explore,
       color: const Color(0xFFFFD54F),
