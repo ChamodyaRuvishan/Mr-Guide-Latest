@@ -5,7 +5,6 @@ import 'services/auth_service.dart';
 import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
-import 'screens/role_selection_screen.dart';
 import 'screens/search_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
@@ -82,8 +81,6 @@ class _MrGuideAppState extends State<MrGuideApp> {
             return MaterialPageRoute(builder: (_) => const SplashScreen());
           case '/onboarding':
             return MaterialPageRoute(builder: (_) => const OnboardingScreen());
-          case '/role_selection':
-            return MaterialPageRoute(builder: (_) => const RoleSelectionScreen());
           case '/home':
             return MaterialPageRoute(
               builder: (_) => _MainScaffold(

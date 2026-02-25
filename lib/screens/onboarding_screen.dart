@@ -71,7 +71,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await prefs.setBool('hasSeenOnboarding', true);
 
     if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/role_selection');
+    Navigator.pushReplacementNamed(context, '/home');
   }
 
   @override
