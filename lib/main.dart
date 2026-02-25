@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'config/supabase_config.dart';
 import 'models/user.dart';
 import 'services/auth_service.dart';
 import 'screens/home_screen.dart';
@@ -10,8 +11,12 @@ import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/about_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Supabase
+  await SupabaseConfig.initialize();
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
@@ -103,13 +108,9 @@ class _MrGuideAppState extends State<MrGuideApp> {
               builder: (_) => RegisterScreen(onLogin: _setUser),
             );
           case '/about':
-            return MaterialPageRoute(
-              builder: (_) => const AboutScreen(),
-            );
+            return MaterialPageRoute(builder: (_) => const AboutScreen());
           default:
-            return MaterialPageRoute(
-              builder: (_) => const SplashScreen(),
-            );
+            return MaterialPageRoute(builder: (_) => const SplashScreen());
         }
       },
     );
@@ -136,18 +137,18 @@ class _MainScaffoldState extends State<_MainScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      const HomeScreen(),
-      const AboutScreen(),
-    ];
+    final pages = [const HomeScreen(), const AboutScreen()];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Mr. Guide',
-            style: TextStyle(
-                color: Color(0xFFFFD700),
-                fontWeight: FontWeight.bold,
-                fontSize: 22)),
+        title: const Text(
+          'Mr. Guide',
+          style: TextStyle(
+            color: Color(0xFFFFD700),
+            fontWeight: FontWeight.bold,
+            fontSize: 22,
+          ),
+        ),
         backgroundColor: const Color(0xFF1B2838),
         actions: [
           if (widget.user != null) ...[
@@ -162,19 +163,25 @@ class _MainScaffoldState extends State<_MainScaffold> {
             ),
             TextButton(
               onPressed: widget.onLogout,
-              child: const Text('Logout',
-                  style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+              child: const Text(
+                'Logout',
+                style: TextStyle(color: Colors.redAccent, fontSize: 13),
+              ),
             ),
           ] else ...[
             TextButton(
               onPressed: () => Navigator.pushNamed(context, '/login'),
-              child: const Text('Login',
-                  style: TextStyle(color: Color(0xFFFFD700), fontSize: 13)),
+              child: const Text(
+                'Login',
+                style: TextStyle(color: Color(0xFFFFD700), fontSize: 13),
+              ),
             ),
             TextButton(
               onPressed: () => Navigator.pushNamed(context, '/register'),
-              child: const Text('Register',
-                  style: TextStyle(color: Colors.white70, fontSize: 13)),
+              child: const Text(
+                'Register',
+                style: TextStyle(color: Colors.white70, fontSize: 13),
+              ),
             ),
           ],
         ],
@@ -188,7 +195,10 @@ class _MainScaffoldState extends State<_MainScaffold> {
         unselectedItemColor: Colors.white38,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(icon: Icon(Icons.info_outline), label: 'About'),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.info_outline),
+            label: 'About',
+          ),
         ],
       ),
     );

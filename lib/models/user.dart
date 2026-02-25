@@ -1,5 +1,5 @@
 class User {
-  final int id;
+  final String id; // Changed from int to String (UUID)
   final String username;
   final String email;
   final String? role;
@@ -19,7 +19,7 @@ class User {
 
   factory User.fromJson(Map<String, dynamic> json) {
     return User(
-      id: json['id'] ?? 0,
+      id: json['id']?.toString() ?? '',
       username: json['username'] ?? '',
       email: json['email'] ?? '',
       role: json['role'],

@@ -1,103 +1,148 @@
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-import '../config/api_config.dart';
-import '../models/user.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/supabase_config.dart';
+import '../models/user.dart' as app_user;
 
 class AuthService {
-  static const String _tokenKey = 'token';
+  static SupabaseClient get _supabase => SupabaseConfig.client;
 
-  static Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(_tokenKey);
-  }
-
-  static Future<void> saveToken(String token) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_tokenKey, token);
-  }
-
-  static Future<void> removeToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_tokenKey);
-  }
-
-  static Future<User?> getCurrentUser() async {
-    final token = await getToken();
-    if (token == null) return null;
-
+  /// Get current authenticated user with profile data
+  static Future<app_user.User?> getCurrentUser() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/auth/me'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
-      );
+      final authUser = _supabase.auth.currentUser;
+      if (authUser == null) return null;
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        return User.fromJson(data);
-      } else {
-        await removeToken();
-        return null;
-      }
+      // Fetch profile data from profiles table
+      final response = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', authUser.id)
+          .maybeSingle();
+
+      if (response == null) return null;
+
+      return app_user.User.fromJson({
+        ...response,
+        'email': authUser.email ?? response['email'],
+      });
     } catch (e) {
       return null;
     }
   }
 
+  /// Login with email and password
   static Future<Map<String, dynamic>> login(
-      String email, String password) async {
+    String email,
+    String password,
+  ) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/auth/login'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode({'email': email, 'password': password}),
+      final response = await _supabase.auth.signInWithPassword(
+        email: email,
+        password: password,
       );
 
-      final data = json.decode(response.body);
+      if (response.user != null) {
+        // Fetch profile data
+        final profile = await _supabase
+            .from('profiles')
+            .select()
+            .eq('id', response.user!.id)
+            .maybeSingle();
 
-      if (response.statusCode == 200) {
-        await saveToken(data['token']);
-        return {'success': true, 'user': User.fromJson(data['user'])};
+        if (profile != null) {
+          return {
+            'success': true,
+            'user': app_user.User.fromJson({
+              ...profile,
+              'email': response.user!.email ?? profile['email'],
+            }),
+          };
+        } else {
+          return {'success': false, 'error': 'Profile not found'};
+        }
       } else {
-        return {
-          'success': false,
-          'error': data['message'] ?? 'Login failed',
-        };
+        return {'success': false, 'error': 'Login failed'};
       }
+    } on AuthException catch (e) {
+      return {'success': false, 'error': e.message};
     } catch (e) {
       return {'success': false, 'error': 'Connection error. Please try again.'};
     }
   }
 
+  /// Register new user
   static Future<Map<String, dynamic>> register(
-      Map<String, dynamic> formData) async {
+    Map<String, dynamic> formData,
+  ) async {
     try {
-      final response = await http.post(
-        Uri.parse('${ApiConfig.baseUrl}/auth/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: json.encode(formData),
+      // Sign up with Supabase Auth
+      final authResponse = await _supabase.auth.signUp(
+        email: formData['email'],
+        password: formData['password'],
+        data: {'username': formData['username']},
       );
 
-      final data = json.decode(response.body);
-
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        await saveToken(data['token']);
-        return {'success': true, 'user': User.fromJson(data['user'])};
-      } else {
-        return {
-          'success': false,
-          'error': data['error'] ?? data['message'] ?? 'Registration failed',
-        };
+      if (authResponse.user == null) {
+        return {'success': false, 'error': 'Registration failed'};
       }
+
+      // Create profile in profiles table
+      final profileData = {
+        'id': authResponse.user!.id,
+        'username': formData['username'],
+        'email': formData['email'],
+        'mobile_number': formData['mobileNumber'],
+        'country_code': formData['countryCode'],
+        'country': formData['country'],
+        'role': formData['role'] ?? 'user',
+      };
+
+      // Add authentic user fields if role is authentic_user
+      if (formData['role'] == 'authentic_user') {
+        profileData['title'] = formData['title'];
+        profileData['education'] = formData['education'];
+        profileData['job_title'] = formData['jobTitle'];
+        profileData['age'] = formData['age'] != null && formData['age'] != ''
+            ? int.tryParse(formData['age'].toString())
+            : null;
+        profileData['description'] = formData['description'];
+        profileData['has_business'] = formData['hasBusiness'] ?? false;
+        if (formData['hasBusiness'] == true) {
+          profileData['business_name'] = formData['businessName'];
+          profileData['business_type'] = formData['businessType'];
+          profileData['business_description'] = formData['businessDescription'];
+        }
+      }
+
+      await _supabase.from('profiles').insert(profileData);
+
+      // Fetch the created profile
+      final profile = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', authResponse.user!.id)
+          .single();
+
+      return {
+        'success': true,
+        'user': app_user.User.fromJson({
+          ...profile,
+          'email': authResponse.user!.email,
+        }),
+      };
+    } on AuthException catch (e) {
+      return {'success': false, 'error': e.message};
+    } on PostgrestException catch (e) {
+      if (e.message.contains('duplicate key')) {
+        return {'success': false, 'error': 'Username or email already exists'};
+      }
+      return {'success': false, 'error': e.message};
     } catch (e) {
-      return {'success': false, 'error': 'Connection error. Please try again.'};
+      return {'success': false, 'error': 'Registration error: ${e.toString()}'};
     }
   }
 
+  /// Logout current user
   static Future<void> logout() async {
-    await removeToken();
+    await _supabase.auth.signOut();
   }
 }
