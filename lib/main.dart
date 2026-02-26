@@ -7,6 +7,7 @@ import 'screens/home_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/find_places_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/about_screen.dart';
@@ -99,6 +100,8 @@ class _MrGuideAppState extends State<MrGuideApp> {
             return MaterialPageRoute(
               builder: (_) => SearchScreen(initialQuery: query),
             );
+          case '/find-places':
+            return MaterialPageRoute(builder: (_) => const FindPlacesScreen());
           case '/login':
             return MaterialPageRoute(
               builder: (_) => LoginScreen(onLogin: _setUser),

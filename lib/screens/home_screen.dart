@@ -197,7 +197,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   Icons.location_on_outlined,
                   'Find Places',
                   'Search hotels, restaurants, and attractions',
-                  onTap: () => _openSearch('Hotels in Colombo'),
+                  onTap: () => Navigator.pushNamed(context, '/find-places'),
                 ),
                 const SizedBox(height: 30),
               ],
