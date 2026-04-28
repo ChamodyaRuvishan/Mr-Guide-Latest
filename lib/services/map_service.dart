@@ -195,6 +195,86 @@ class MapService {
     }
   }
 
+  /// Get multi-stop route from OSRM
+  static Future<Map<String, dynamic>?> getMultiRoute({
+    required List<List<double>> points,
+    String travelMode = 'car',
+  }) async {
+    if (points.length < 2) return null;
+
+    try {
+      final profile = _resolveOsrmProfile(travelMode);
+      final coordinates = points.map((p) => '${p[1]},${p[0]}').join(';');
+
+      final url =
+          Uri.parse(
+            'https://router.project-osrm.org/route/v1/$profile/$coordinates',
+          ).replace(
+            queryParameters: {
+              'overview': 'full',
+              'geometries': 'geojson',
+              'steps': 'true',
+            },
+          );
+
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final routes = data['routes'] as List?;
+
+        if (routes != null && routes.isNotEmpty) {
+          final routeData = routes[0];
+          final coordinates = routeData['geometry']['coordinates'] as List;
+          final routePoints = coordinates
+              .map(
+                (coord) => [
+                  (coord[1] as num).toDouble(),
+                  (coord[0] as num).toDouble(),
+                ],
+              )
+              .toList();
+
+          final distanceKm = ((routeData['distance'] as num) / 1000)
+              .toStringAsFixed(1);
+          final durationMin = ((routeData['duration'] as num) / 60).round();
+
+          List<RouteStep> steps = [];
+          final legs = routeData['legs'] as List?;
+          if (legs != null && legs.isNotEmpty) {
+            for (final leg in legs) {
+              final legSteps = leg['steps'] as List? ?? [];
+              steps.addAll(
+                legSteps.asMap().entries.map((entry) {
+                  final i = entry.key;
+                  final step = entry.value;
+                  return RouteStep(
+                    id: i,
+                    instruction: _formatInstruction(step),
+                    distance: ((step['distance'] as num) / 1000)
+                        .toStringAsFixed(2),
+                    duration: ((step['duration'] as num) / 60).round(),
+                  );
+                }),
+              );
+            }
+          }
+
+          return {
+            'routePoints': routePoints,
+            'distance': distanceKm,
+            'duration': durationMin,
+            'steps': steps,
+          };
+        }
+      }
+
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   static String _resolveOsrmProfile(String travelMode) {
     switch (travelMode) {
       case 'walk':

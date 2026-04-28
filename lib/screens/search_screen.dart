@@ -31,6 +31,8 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _routeLoading = false;
   String _searchStatus = '';
   String _travelMode = 'car';
+  bool _isTripRoute = false;
+  final List<Place> _destinations = [];
 
   // Start location
   LatLng? _startLocation;
@@ -111,6 +113,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _routeDistance = null;
       _routeDuration = null;
       _directions = [];
+      _isTripRoute = false;
     });
 
     final results = await MapService.searchPlaces(query);
@@ -184,6 +187,7 @@ class _SearchScreenState extends State<SearchScreen> {
       _routeDistance = null;
       _routeDuration = null;
       _directions = [];
+      _isTripRoute = false;
     });
 
     final result = await MapService.getRoute(
@@ -231,7 +235,109 @@ class _SearchScreenState extends State<SearchScreen> {
       _routeDistance = null;
       _routeDuration = null;
       _directions = [];
+      _isTripRoute = false;
     });
+  }
+
+  void _clearTrip() {
+    setState(() {
+      _destinations.clear();
+      _selectedPlace = null;
+      _route = null;
+      _routeDistance = null;
+      _routeDuration = null;
+      _directions = [];
+      _isTripRoute = false;
+    });
+  }
+
+  void _addDestination(Place place) {
+    if (_destinations.any((d) => d.id == place.id)) return;
+    setState(() => _destinations.add(place));
+  }
+
+  void _removeDestination(Place place) {
+    setState(() => _destinations.removeWhere((d) => d.id == place.id));
+  }
+
+  String _destinationLabel(int index) {
+    final code = 'A'.codeUnitAt(0) + index + 1;
+    if (code <= 'Z'.codeUnitAt(0)) {
+      return String.fromCharCode(code);
+    }
+    return '${index + 1}';
+  }
+
+  Future<void> _buildTripRoute() async {
+    if (_startLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please set your starting location first'),
+        ),
+      );
+      setState(() => _showStartSearch = true);
+      return;
+    }
+
+    if (_destinations.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add at least one destination to build a trip'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _selectedPlace = null;
+      _routeLoading = true;
+      _route = null;
+      _routeDistance = null;
+      _routeDuration = null;
+      _directions = [];
+      _isTripRoute = true;
+    });
+
+    final points = [
+      [_startLocation!.latitude, _startLocation!.longitude],
+      ..._destinations.map((d) => [d.lat, d.lng]),
+    ];
+
+    final result = await MapService.getMultiRoute(
+      points: points,
+      travelMode: _travelMode,
+    );
+
+    if (result != null) {
+      final routePoints = (result['routePoints'] as List)
+          .map((p) => LatLng(p[0], p[1]))
+          .toList();
+
+      setState(() {
+        _route = routePoints;
+        _routeDistance = result['distance'];
+        _routeDuration = result['duration'];
+        _directions = result['steps'];
+        _routeLoading = false;
+      });
+
+      _runMapAction(() {
+        final bounds = LatLngBounds.fromPoints(routePoints);
+        _mapController.fitCamera(
+          CameraFit.bounds(bounds: bounds, padding: const EdgeInsets.all(60)),
+        );
+      });
+    } else {
+      setState(() {
+        _routeLoading = false;
+        _isTripRoute = false;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not calculate trip route')),
+        );
+      }
+    }
   }
 
   void _moveMapTo(LatLng point, {double zoom = 13}) {
@@ -366,6 +472,21 @@ class _SearchScreenState extends State<SearchScreen> {
                 height: 36,
                 child: _buildMarker(const Color(0xFF00C853), 'A'),
               ),
+
+            // Trip destination markers
+            ..._destinations.asMap().entries.map((entry) {
+              final i = entry.key;
+              final place = entry.value;
+              return Marker(
+                point: LatLng(place.lat, place.lng),
+                width: 36,
+                height: 36,
+                child: _buildMarker(
+                  const Color(0xFF2979FF),
+                  _destinationLabel(i),
+                ),
+              );
+            }),
 
             // Search result markers
             ..._places.asMap().entries.map((entry) {
@@ -528,6 +649,10 @@ class _SearchScreenState extends State<SearchScreen> {
 
           // Travel Mode
           _buildTravelModeSection(),
+          const SizedBox(height: 12),
+
+          // Trip Planner
+          _buildTripPlannerSection(),
           const SizedBox(height: 12),
 
           // Search Status
@@ -785,7 +910,9 @@ class _SearchScreenState extends State<SearchScreen> {
               child: GestureDetector(
                 onTap: () {
                   setState(() => _travelMode = mode['id'] as String);
-                  if (_selectedPlace != null && _startLocation != null) {
+                  if (_isTripRoute && _destinations.isNotEmpty) {
+                    _buildTripRoute();
+                  } else if (_selectedPlace != null && _startLocation != null) {
                     _getDirections(_selectedPlace!);
                   }
                 },
@@ -833,7 +960,185 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _buildTripPlannerSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.route, color: Colors.white54, size: 18),
+            const SizedBox(width: 6),
+            const Expanded(
+              child: Text(
+                'Route Planning',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            if (_destinations.isNotEmpty)
+              GestureDetector(
+                onTap: _clearTrip,
+                child: const Text(
+                  'Clear',
+                  style: TextStyle(color: Color(0xFFFFD700), fontSize: 12),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_destinations.isEmpty)
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+            ),
+            child: const Text(
+              'Add destinations from search results using the + button.',
+              style: TextStyle(color: Colors.white54, fontSize: 12),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _destinations.asMap().entries.map((entry) {
+              final i = entry.key;
+              final place = entry.value;
+              return Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.1),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _destinationLabel(i),
+                      style: const TextStyle(
+                        color: Color(0xFF2979FF),
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      place.name,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    GestureDetector(
+                      onTap: () => _removeDestination(place),
+                      child: const Icon(
+                        Icons.close,
+                        size: 14,
+                        color: Colors.white38,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }).toList(),
+          ),
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: _destinations.isEmpty ? null : _buildTripRoute,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFFD700),
+              foregroundColor: Colors.black,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            icon: const Icon(Icons.alt_route, size: 18),
+            label: Text(
+              _destinations.isEmpty
+                  ? 'Add destinations to build trip'
+                  : 'Build trip route (${_destinations.length})',
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildRouteInfo() {
+    final List<Widget> stopRows = [
+      Row(
+        children: [
+          _endpointBadge('A', const Color(0xFF00C853)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _startLocationName,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    ];
+
+    if (_isTripRoute) {
+      for (final entry in _destinations.asMap().entries) {
+        stopRows.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                _endpointBadge(
+                  _destinationLabel(entry.key),
+                  const Color(0xFF2979FF),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    entry.value.name,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
+    } else if (_selectedPlace != null) {
+      stopRows.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Row(
+            children: [
+              _endpointBadge('B', const Color(0xFF2979FF)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _selectedPlace?.name ?? '',
+                  style: const TextStyle(color: Colors.white70, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(14),
@@ -851,10 +1156,10 @@ class _SearchScreenState extends State<SearchScreen> {
             children: [
               const Icon(Icons.map, color: Color(0xFF4285F4), size: 18),
               const SizedBox(width: 8),
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Route Details',
-                  style: TextStyle(
+                  _isTripRoute ? 'Trip Details' : 'Route Details',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.bold,
                     fontSize: 14,
@@ -862,39 +1167,13 @@ class _SearchScreenState extends State<SearchScreen> {
                 ),
               ),
               GestureDetector(
-                onTap: _clearRoute,
+                onTap: _isTripRoute ? _clearTrip : _clearRoute,
                 child: const Icon(Icons.close, color: Colors.white38, size: 20),
               ),
             ],
           ),
           const SizedBox(height: 10),
-
-          // Endpoints
-          Row(
-            children: [
-              _endpointBadge('A', const Color(0xFF00C853)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _startLocationName,
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              _endpointBadge('B', const Color(0xFF2979FF)),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  _selectedPlace?.name ?? '',
-                  style: const TextStyle(color: Colors.white70, fontSize: 12),
-                ),
-              ),
-            ],
-          ),
+          ...stopRows,
           const SizedBox(height: 12),
 
           // Stats
@@ -1034,6 +1313,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildPlaceCard(int index, Place place) {
     final isSelected = _selectedPlace?.id == place.id;
+    final isInTrip = _destinations.any((d) => d.id == place.id);
     String? distance;
     if (_startLocation != null) {
       distance = MapService.calculateDistance(
@@ -1107,10 +1387,6 @@ class _SearchScreenState extends State<SearchScreen> {
                     children: [
                       if (place.type.isNotEmpty)
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
                           decoration: BoxDecoration(
                             color: Colors.white.withValues(alpha: 0.08),
                             borderRadius: BorderRadius.circular(4),
@@ -1148,6 +1424,37 @@ class _SearchScreenState extends State<SearchScreen> {
               Icons.arrow_forward_ios,
               color: Colors.white24,
               size: 16,
+            ),
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () {
+                if (isInTrip) {
+                  _removeDestination(place);
+                } else {
+                  _addDestination(place);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: isInTrip
+                      ? const Color(0xFF00C853).withValues(alpha: 0.2)
+                      : const Color(0xFFFFD700).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isInTrip
+                        ? const Color(0xFF00C853)
+                        : const Color(0xFFFFD700),
+                  ),
+                ),
+                child: Icon(
+                  isInTrip ? Icons.check : Icons.add,
+                  size: 16,
+                  color: isInTrip
+                      ? const Color(0xFF00C853)
+                      : const Color(0xFFFFD700),
+                ),
+              ),
             ),
           ],
         ),
