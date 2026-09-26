@@ -178,15 +178,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               shape: BoxShape.circle,
               gradient: LinearGradient(
                 colors: [
-                  page.color.withOpacity(0.8),
-                  page.color.withOpacity(0.3),
+                  page.color.withValues(alpha: 0.8),
+                  page.color.withValues(alpha: 0.3),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: page.color.withOpacity(0.4),
+                  color: page.color.withValues(alpha: 0.4),
                   blurRadius: 30,
                   spreadRadius: 10,
                 ),
