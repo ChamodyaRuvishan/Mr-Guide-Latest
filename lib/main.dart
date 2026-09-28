@@ -36,6 +36,7 @@ class MrGuideApp extends StatefulWidget {
 
 class _MrGuideAppState extends State<MrGuideApp> {
   User? _user;
+  int _authRevision = 0;
 
   @override
   void initState() {
@@ -44,8 +45,9 @@ class _MrGuideAppState extends State<MrGuideApp> {
   }
 
   Future<void> _checkAuth() async {
+    final revision = _authRevision;
     final user = await AuthService.getCurrentUser();
-    if (mounted) {
+    if (mounted && revision == _authRevision) {
       setState(() {
         _user = user;
       });
@@ -53,12 +55,16 @@ class _MrGuideAppState extends State<MrGuideApp> {
   }
 
   void _setUser(User user) {
+    _authRevision++;
     setState(() => _user = user);
   }
 
   void _logout() async {
+    final revision = ++_authRevision;
     await AuthService.logout();
-    setState(() => _user = null);
+    if (mounted && revision == _authRevision) {
+      setState(() => _user = null);
+    }
   }
 
   @override
