@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/supabase_config.dart';
 import '../models/review.dart';
@@ -16,7 +17,7 @@ class ReviewService {
 
       return (response as List).map((json) => Review.fromJson(json)).toList();
     } catch (e) {
-      print('Error fetching reviews: $e');
+      debugPrint('Error fetching reviews: $e');
       return [];
     }
   }
@@ -144,7 +145,7 @@ class ReviewService {
 
       return Review.fromJson(response);
     } catch (e) {
-      print('Error fetching user review: $e');
+      debugPrint('Error fetching user review: $e');
       return null;
     }
   }
