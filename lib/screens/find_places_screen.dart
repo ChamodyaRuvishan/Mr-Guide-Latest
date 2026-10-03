@@ -4,6 +4,7 @@ import 'package:latlong2/latlong.dart';
 import '../config/api_config.dart';
 import '../models/place.dart';
 import '../services/map_service.dart';
+import '../services/search_history_service.dart';
 import 'place_detail_screen.dart';
 
 class FindPlacesScreen extends StatefulWidget {
@@ -37,7 +38,10 @@ class _FindPlacesScreenState extends State<FindPlacesScreen> {
   }
 
   Future<void> _searchPlaces(String query) async {
-    if (query.trim().isEmpty) return;
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) return;
+
+    await SearchHistoryService.addRecentSearch(normalizedQuery);
 
     setState(() {
       _searchLoading = true;
@@ -46,7 +50,7 @@ class _FindPlacesScreenState extends State<FindPlacesScreen> {
       _selectedPlace = null;
     });
 
-    final results = await MapService.searchPlaces(query);
+    final results = await MapService.searchPlaces(normalizedQuery);
 
     setState(() {
       _places = results;
