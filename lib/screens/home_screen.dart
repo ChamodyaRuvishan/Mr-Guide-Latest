@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/search_history_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -9,7 +10,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
-
   final List<Map<String, String>> popularDestinations = [
     {'name': 'Sigiriya', 'query': 'Sigiriya Rock Fortress'},
     {'name': 'Temple of the Tooth', 'query': 'Temple of the Tooth Kandy'},
@@ -18,11 +18,47 @@ class _HomeScreenState extends State<HomeScreen> {
     {'name': 'Ella', 'query': 'Ella Sri Lanka'},
     {'name': 'Colombo Hotels', 'query': 'Colombo hotels'},
   ];
+  List<String> _recentSearches = [];
 
-  void _handleSearch(String query) {
-    if (query.trim().isNotEmpty) {
-      Navigator.pushNamed(context, '/search', arguments: query.trim());
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentSearches();
+  }
+
+  Future<void> _loadRecentSearches() async {
+    final searches = await SearchHistoryService.getRecentSearches();
+    if (!mounted) return;
+    setState(() => _recentSearches = searches);
+  }
+
+  Future<void> _handleSearch(String query) async {
+    final normalizedQuery = query.trim();
+    if (normalizedQuery.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a place name to search')),
+      );
+      return;
     }
+
+    await SearchHistoryService.addRecentSearch(normalizedQuery);
+    if (!mounted) return;
+
+    final updated = [normalizedQuery, ..._recentSearches]
+      .where(
+        (item) => item.trim().isNotEmpty &&
+            item.toLowerCase() != normalizedQuery.toLowerCase(),
+      )
+      .toList();
+
+    setState(() => _recentSearches = [normalizedQuery, ...updated].take(6).toList());
+    Navigator.pushNamed(context, '/search', arguments: normalizedQuery);
+  }
+
+  Future<void> _clearRecentSearches() async {
+    await SearchHistoryService.clearRecentSearches();
+    if (!mounted) return;
+    setState(() => _recentSearches = []);
   }
 
   void _openSearch([String? query]) {
@@ -57,7 +93,6 @@ class _HomeScreenState extends State<HomeScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 40),
-                // Hero Title
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
@@ -81,8 +116,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   style: TextStyle(color: Colors.white70, fontSize: 15),
                 ),
                 const SizedBox(height: 30),
-
-                // Search Bar
                 Container(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.1),
@@ -121,8 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       Container(
                         margin: const EdgeInsets.all(6),
                         child: ElevatedButton(
-                          onPressed: () =>
-                              _handleSearch(_searchController.text),
+                          onPressed: () => _handleSearch(_searchController.text),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: const Color(0xFFFFD700),
                             foregroundColor: Colors.black,
@@ -144,8 +176,52 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // Popular Destinations
+                if (_recentSearches.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Recent Searches',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          TextButton(
+                            onPressed: _clearRecentSearches,
+                            child: const Text(
+                              'Clear',
+                              style: TextStyle(color: Color(0xFFFFD700)),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: _recentSearches.map((search) {
+                          return ActionChip(
+                            label: Text(search),
+                            labelStyle: const TextStyle(color: Colors.white),
+                            backgroundColor: Colors.white.withValues(alpha: 0.08),
+                            side: BorderSide(
+                              color: const Color(0xFFFFD700).withValues(alpha: 0.3),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            onPressed: () => _handleSearch(search),
+                          );
+                        }).toList(),
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  ),
                 const Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
@@ -177,8 +253,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 40),
-
-                // Feature Cards
                 _buildFeatureCard(
                   Icons.map_outlined,
                   'Interactive Maps',
