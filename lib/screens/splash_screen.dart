@@ -19,26 +19,24 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
     super.initState();
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 2),
+      duration: const Duration(seconds: 1),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
+    _scaleAnimation = Tween<double>(begin: 0.75, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
     );
 
-    _glowAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+    _glowAnimation = Tween<double>(begin: 0.2, end: 1.0).animate(
       CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
     );
 
     _controller.forward();
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed) {
-        _controller.reverse();
-      } else if (status == AnimationStatus.dismissed) {
-        _controller.forward();
+        _controller.stop();
       }
     });
-    
+
     _checkNavigation();
   }
 

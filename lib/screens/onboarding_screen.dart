@@ -66,6 +66,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     await _finishOnboarding();
   }
 
+  void _onPrevious() {
+    if (_currentPage > 0) {
+      _pageController.previousPage(
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
+  }
+
   Future<void> _finishOnboarding() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('hasSeenOnboarding', true);
@@ -85,9 +94,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Align(
               alignment: Alignment.topRight,
               child: TextButton(
-                onPressed: _currentPage == _pages.length - 1 ? null : _onSkip,
+                onPressed: _currentPage == _pages.length - 1 ? _onPrevious : _onSkip,
                 child: Text(
-                  _currentPage == _pages.length - 1 ? "" : "Skip",
+                  _currentPage == _pages.length - 1 ? "Back" : "Skip",
                   style: const TextStyle(
                     color: Colors.white54,
                     fontSize: 16,
