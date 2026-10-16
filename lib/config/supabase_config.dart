@@ -1,19 +1,12 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
-
+/// SupabaseConfig is deprecated.
+///
+/// The Mr. Guide mobile application has migrated to the unified Node.js REST API
+/// backend and Neon PostgreSQL database, matching the web application.
+/// Authentication, reviews, guides, places, and bookings are now managed via ApiService.
 class SupabaseConfig {
-  static const String supabaseUrl = 'https://scdgkcbyqxslcebulxaj.supabase.co';
-  static const String supabaseAnonKey =
-      'sb_publishable_lhLkluMuD0VCpd3-Br3H_w_G6P4DlBZ';
-
+  /// Inert stub kept for backward compatibility.
   static Future<void> initialize() async {
-    await Supabase.initialize(
-      url: supabaseUrl,
-      anonKey: supabaseAnonKey,
-      authOptions: const FlutterAuthClientOptions(
-        authFlowType: AuthFlowType.pkce,
-      ),
-    );
+    // No-op: Supabase is no longer used.
   }
-
-  static SupabaseClient get client => Supabase.instance.client;
 }
+

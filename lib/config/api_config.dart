@@ -1,7 +1,9 @@
 class ApiConfig {
   // Change this to your backend server URL
-  // For Android emulator use 10.0.2.2, for real device use your PC's IP
-  static const String baseUrl = 'http://10.0.2.2:3001/api';
+  // For USB Debugging with `adb reverse tcp:3001 tcp:3001` (Recommended)
+  static const String baseUrl = 'http://127.0.0.1:3001/api';
+  // If connecting via local Wi-Fi without adb reverse:
+  // static const String baseUrl = 'http://10.207.64.92:3001/api';
 
   // MapTiler API Key
   static const String mapTilerKey = 'xsEVv6FORhLcPcw7bN85';

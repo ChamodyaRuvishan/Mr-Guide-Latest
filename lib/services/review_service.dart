@@ -1,72 +1,59 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/supabase_config.dart';
+import 'api_service.dart';
 import '../models/review.dart';
 
+/// ReviewService — backed by the Node.js backend (Neon PostgreSQL).
+///
+/// All data is shared with the web app via the same database.
+/// Endpoints:
+///   GET    /api/places/:placeId/reviews          → list reviews
+///   POST   /api/places/:placeId/reviews          → create review (auth required)
+///   PUT    /api/places/reviews/:reviewId         → update review (auth required)
+///   DELETE /api/places/reviews/:reviewId         → delete review (auth required)
 class ReviewService {
-  static SupabaseClient get _supabase => SupabaseConfig.client;
-
   /// Get all reviews for a specific place
   static Future<List<Review>> getReviewsForPlace(String placeId) async {
     try {
-      final response = await _supabase
-          .from('reviews')
-          .select()
-          .eq('place_id', placeId)
-          .order('created_at', ascending: false);
-
-      return (response as List).map((json) => Review.fromJson(json)).toList();
+      final response = await ApiService.get('/places/$placeId/reviews');
+      if (response != null && response['reviews'] is List) {
+        return (response['reviews'] as List)
+            .map((json) => Review.fromJson(json))
+            .toList();
+      }
+      return [];
     } catch (e) {
       debugPrint('Error fetching reviews: $e');
       return [];
     }
   }
 
-  /// Submit a new review
+  /// Submit a new review (user must be logged in)
   static Future<Map<String, dynamic>> submitReview({
     required String placeId,
-    required String placeName,
     required double rating,
     required String comment,
   }) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
+      final token = await ApiService.getToken();
+      if (token == null || token.isEmpty) {
         return {'success': false, 'error': 'Please login to submit a review'};
       }
 
-      // Get user profile for username
-      final profile = await _supabase
-          .from('profiles')
-          .select('username')
-          .eq('id', user.id)
-          .maybeSingle();
+      final response = await ApiService.post(
+        '/places/$placeId/reviews',
+        body: {
+          'rating': rating.toInt(),
+          'comment': comment,
+        },
+      );
 
-      final userName = profile?['username'] ?? 'Anonymous';
-
-      final reviewData = {
-        'place_id': placeId,
-        'place_name': placeName,
-        'user_id': user.id,
-        'user_name': userName,
-        'rating': rating,
-        'comment': comment,
-      };
-
-      final response = await _supabase
-          .from('reviews')
-          .insert(reviewData)
-          .select()
-          .single();
-
-      return {'success': true, 'review': Review.fromJson(response)};
-    } on PostgrestException catch (e) {
-      return {'success': false, 'error': e.message};
+      if (response != null) {
+        return {'success': true, 'review': Review.fromJson(response)};
+      }
+      return {'success': false, 'error': 'Failed to submit review'};
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Failed to submit review. Please try again.',
-      };
+      final msg = e.toString().replaceFirst(RegExp(r'^.*Exception:\s*'), '');
+      return {'success': false, 'error': msg};
     }
   }
 
@@ -77,94 +64,78 @@ class ReviewService {
     required String comment,
   }) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
+      final token = await ApiService.getToken();
+      if (token == null || token.isEmpty) {
         return {'success': false, 'error': 'Please login to update a review'};
       }
 
-      final updateData = {'rating': rating, 'comment': comment};
+      final response = await ApiService.put(
+        '/places/reviews/$reviewId',
+        body: {'rating': rating.toInt(), 'comment': comment},
+      );
 
-      final response = await _supabase
-          .from('reviews')
-          .update(updateData)
-          .eq('id', reviewId)
-          .eq('user_id', user.id)
-          .select()
-          .single();
-
-      return {'success': true, 'review': Review.fromJson(response)};
-    } on PostgrestException catch (e) {
-      return {'success': false, 'error': e.message};
+      if (response != null) {
+        return {'success': true, 'review': Review.fromJson(response)};
+      }
+      return {'success': false, 'error': 'Failed to update review'};
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Failed to update review. Please try again.',
-      };
+      final msg = e.toString().replaceFirst(RegExp(r'^.*Exception:\s*'), '');
+      return {'success': false, 'error': msg};
     }
   }
 
   /// Delete a review
   static Future<Map<String, dynamic>> deleteReview(String reviewId) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) {
+      final token = await ApiService.getToken();
+      if (token == null || token.isEmpty) {
         return {'success': false, 'error': 'Please login to delete a review'};
       }
 
-      await _supabase
-          .from('reviews')
-          .delete()
-          .eq('id', reviewId)
-          .eq('user_id', user.id);
-
+      await ApiService.delete('/places/reviews/$reviewId');
       return {'success': true};
-    } on PostgrestException catch (e) {
-      return {'success': false, 'error': e.message};
     } catch (e) {
-      return {
-        'success': false,
-        'error': 'Failed to delete review. Please try again.',
-      };
+      final msg = e.toString().replaceFirst(RegExp(r'^.*Exception:\s*'), '');
+      return {'success': false, 'error': msg};
     }
   }
 
-  /// Get current user's review for a place (to check if they already reviewed)
+  /// Get the current user's review for a place (if it exists)
   static Future<Review?> getUserReviewForPlace(String placeId) async {
     try {
-      final user = _supabase.auth.currentUser;
-      if (user == null) return null;
+      final token = await ApiService.getToken();
+      if (token == null || token.isEmpty) return null;
 
-      final response = await _supabase
-          .from('reviews')
-          .select()
-          .eq('place_id', placeId)
-          .eq('user_id', user.id)
-          .maybeSingle();
+      final reviews = await getReviewsForPlace(placeId);
+      // The backend returns user_id; we check against the current auth token id
+      // by calling /auth/me then comparing
+      final meResponse = await ApiService.get('/auth/me');
+      if (meResponse == null) return null;
 
-      if (response == null) return null;
+      final currentUserId = meResponse['id']?.toString();
+      if (currentUserId == null) return null;
 
-      return Review.fromJson(response);
-    } catch (e) {
-      debugPrint('Error fetching user review: $e');
+      return reviews.firstWhere(
+        (r) => r.userId == currentUserId,
+        orElse: () => throw StateError('Not found'),
+      );
+    } catch (_) {
       return null;
     }
   }
 
-  /// Get average rating for a place
+  /// Get average rating summary for a place
   static Future<Map<String, dynamic>> getPlaceRatingSummary(
-    String placeId,
-  ) async {
+      String placeId) async {
     try {
-      final reviews = await getReviewsForPlace(placeId);
-
-      if (reviews.isEmpty) {
-        return {'averageRating': 0.0, 'totalReviews': 0};
+      final response = await ApiService.get('/places/$placeId/reviews');
+      if (response != null) {
+        return {
+          'averageRating': (response['average_rating'] ?? 0.0).toDouble(),
+          'totalReviews': response['total'] ?? 0,
+        };
       }
-
-      final sum = reviews.fold<double>(0, (sum, review) => sum + review.rating);
-      final average = sum / reviews.length;
-
-      return {'averageRating': average, 'totalReviews': reviews.length};
+      return {'averageRating': 0.0, 'totalReviews': 0};
     } catch (e) {
       return {'averageRating': 0.0, 'totalReviews': 0};
     }

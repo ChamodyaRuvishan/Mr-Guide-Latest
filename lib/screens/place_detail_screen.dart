@@ -79,11 +79,10 @@ class _PlaceDetailScreenState extends State<PlaceDetailScreen> {
 
     setState(() => _isSubmitting = true);
 
-    // TODO: Submit to Supabase
+    // Submit review via Node.js backend
     try {
       final result = await ReviewService.submitReview(
         placeId: widget.place.id,
-        placeName: widget.place.name,
         rating: _userRating,
         comment: _commentController.text.trim(),
       );
