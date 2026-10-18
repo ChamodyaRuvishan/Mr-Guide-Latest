@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'config/supabase_config.dart';
 import 'models/user.dart';
 import 'services/auth_service.dart';
 import 'screens/home_screen.dart';
@@ -14,9 +13,6 @@ import 'screens/about_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  // Initialize Supabase
-  await SupabaseConfig.initialize();
 
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(

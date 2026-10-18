@@ -1,7 +1,19 @@
 class ApiConfig {
-  // Change this to your backend server URL
-  // For Android emulator use 10.0.2.2, for real device use your PC's IP
-  static const String baseUrl = 'http://10.0.2.2:3001/api';
+  // Production Render Backend URL (Default)
+  static const String baseUrl = 'https://mrguide-backend.onrender.com/api';
+
+  // --- Local & Remote Development Options ---
+  // Option 1: USB Debugging with adb (Run `adb reverse tcp:3001 tcp:3001` in terminal)
+  // static const String baseUrl = 'http://127.0.0.1:3001/api';
+  //
+  // Option 2: Android Emulator (10.0.2.2 maps to host 127.0.0.1)
+  // static const String baseUrl = 'http://10.0.2.2:3001/api';
+  //
+  // Option 3: Physical Device via Local Wi-Fi (Change to your PC's IPv4 address)
+  // static const String baseUrl = 'http://192.168.1.X:3001/api';
+  //
+  // Option 4: Ngrok Tunnel (For testing on physical phone via mobile data)
+  // static const String baseUrl = 'https://your-ngrok-subdomain.ngrok-free.app/api';
 
   // MapTiler API Key
   static const String mapTilerKey = 'xsEVv6FORhLcPcw7bN85';
