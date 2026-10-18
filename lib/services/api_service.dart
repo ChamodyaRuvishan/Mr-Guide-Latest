@@ -4,8 +4,23 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 
+/// Custom Exception for API Errors with HTTP Status Codes
+class ApiException implements Exception {
+  final int statusCode;
+  final String message;
+  final Uri? uri;
+
+  ApiException(this.message, {this.statusCode = 500, this.uri});
+
+  @override
+  String toString() => message;
+}
+
 class ApiService {
   static const String _authTokenKey = 'auth_token';
+
+  // Render cold start can take 30-50s on the free tier, so we use a 60-second timeout
+  static const Duration _timeout = Duration(seconds: 60);
 
   /// Save the authentication token to local storage
   static Future<void> saveToken(String token) async {
@@ -44,27 +59,55 @@ class ApiService {
     return headers;
   }
 
-  /// Helper to handle the API response
+  /// Helper to validate HTTP status codes and handle responses
   static dynamic _handleResponse(http.Response response) {
+    // 200 OK, 201 Created, 204 No Content
     if (response.statusCode >= 200 && response.statusCode < 300) {
       if (response.body.isNotEmpty) {
-        return jsonDecode(response.body);
+        try {
+          return jsonDecode(response.body);
+        } catch (_) {
+          return response.body;
+        }
       }
       return null;
-    } else {
-      String errorMessage = 'Something went wrong';
-      try {
+    }
+
+    // Extract error message from backend response if available
+    String errorMessage = 'An unexpected error occurred';
+    try {
+      if (response.body.isNotEmpty) {
         final body = jsonDecode(response.body);
-        errorMessage = body['error'] ?? body['message'] ?? errorMessage;
-      } catch (e) {
-        // Not JSON
-        errorMessage = response.body.isNotEmpty ? response.body : response.reasonPhrase ?? errorMessage;
+        if (body is Map) {
+          errorMessage = body['error'] ?? body['message'] ?? errorMessage;
+        }
       }
-      throw HttpException('Error ${response.statusCode}: $errorMessage', uri: response.request?.url);
+    } catch (_) {
+      if (response.body.isNotEmpty) {
+        errorMessage = response.body;
+      }
+    }
+
+    // Map status codes according to backend conventions
+    switch (response.statusCode) {
+      case 400:
+        throw ApiException(errorMessage, statusCode: 400, uri: response.request?.url);
+      case 401:
+        throw ApiException(errorMessage.isNotEmpty ? errorMessage : 'Unauthorized. Please login again.', statusCode: 401, uri: response.request?.url);
+      case 403:
+        throw ApiException(errorMessage.isNotEmpty ? errorMessage : 'Access forbidden.', statusCode: 403, uri: response.request?.url);
+      case 404:
+        throw ApiException(errorMessage.isNotEmpty ? errorMessage : 'Requested resource not found.', statusCode: 404, uri: response.request?.url);
+      case 429:
+        throw ApiException('Too many requests. Please wait a moment and try again.', statusCode: 429, uri: response.request?.url);
+      case 500:
+      case 502:
+      case 503:
+        throw ApiException(errorMessage.isNotEmpty ? errorMessage : 'Server error. Please try again later.', statusCode: response.statusCode, uri: response.request?.url);
+      default:
+        throw ApiException('Error ${response.statusCode}: $errorMessage', statusCode: response.statusCode, uri: response.request?.url);
     }
   }
-
-  static const Duration _timeout = Duration(seconds: 15);
 
   /// GET request
   static Future<dynamic> get(String endpoint, {Map<String, String>? headers}) async {
@@ -74,12 +117,19 @@ class ApiService {
       final response = await http
           .get(url, headers: finalHeaders)
           .timeout(_timeout, onTimeout: () {
-        throw HttpException(
-          'Connection timed out. Unable to reach server at ${ApiConfig.baseUrl}',
+        throw ApiException(
+          'Connection timed out. The server might be waking up (Render cold start). Please try again.',
+          statusCode: 408,
           uri: url,
         );
       });
       return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+        'Unable to connect to server. Please check your internet connection.',
+        statusCode: 0,
+        uri: url,
+      );
     } catch (e) {
       rethrow;
     }
@@ -97,12 +147,19 @@ class ApiService {
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(_timeout, onTimeout: () {
-        throw HttpException(
-          'Connection timed out. Unable to reach server at ${ApiConfig.baseUrl}',
+        throw ApiException(
+          'Connection timed out. The server might be waking up (Render cold start). Please try again.',
+          statusCode: 408,
           uri: url,
         );
       });
       return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+        'Unable to connect to server. Please check your internet connection.',
+        statusCode: 0,
+        uri: url,
+      );
     } catch (e) {
       rethrow;
     }
@@ -120,12 +177,19 @@ class ApiService {
             body: body != null ? jsonEncode(body) : null,
           )
           .timeout(_timeout, onTimeout: () {
-        throw HttpException(
-          'Connection timed out. Unable to reach server at ${ApiConfig.baseUrl}',
+        throw ApiException(
+          'Connection timed out. The server might be waking up (Render cold start). Please try again.',
+          statusCode: 408,
           uri: url,
         );
       });
       return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+        'Unable to connect to server. Please check your internet connection.',
+        statusCode: 0,
+        uri: url,
+      );
     } catch (e) {
       rethrow;
     }
@@ -139,12 +203,19 @@ class ApiService {
       final response = await http
           .delete(url, headers: finalHeaders)
           .timeout(_timeout, onTimeout: () {
-        throw HttpException(
-          'Connection timed out. Unable to reach server at ${ApiConfig.baseUrl}',
+        throw ApiException(
+          'Connection timed out. The server might be waking up (Render cold start). Please try again.',
+          statusCode: 408,
           uri: url,
         );
       });
       return _handleResponse(response);
+    } on SocketException {
+      throw ApiException(
+        'Unable to connect to server. Please check your internet connection.',
+        statusCode: 0,
+        uri: url,
+      );
     } catch (e) {
       rethrow;
     }

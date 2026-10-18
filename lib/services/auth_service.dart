@@ -79,19 +79,23 @@ class AuthService {
         // Save the token
         await ApiService.saveToken(response['token']);
         
-        // Fetch full profile data using /auth/me to get all details including profile
-        final userResponse = await ApiService.get('/auth/me');
-        if (userResponse != null) {
-          return {
-            'success': true,
-            'user': app_user.User.fromJson(userResponse),
-          };
-        } else {
-          return {
-            'success': true,
-            'user': app_user.User.fromJson(response['user']),
-          };
+        // Try fetching full profile data using /auth/me, fallback to response['user']
+        try {
+          final userResponse = await ApiService.get('/auth/me');
+          if (userResponse != null) {
+            return {
+              'success': true,
+              'user': app_user.User.fromJson(userResponse),
+            };
+          }
+        } catch (_) {
+          // If /auth/me ping fails, fallback safely to the user returned in register response
         }
+
+        return {
+          'success': true,
+          'user': app_user.User.fromJson(response['user']),
+        };
       }
       return {'success': false, 'error': 'Registration failed'};
     } catch (e) {
