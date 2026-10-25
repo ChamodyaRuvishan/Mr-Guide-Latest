@@ -1,8 +1,23 @@
 import 'package:flutter/material.dart';
+import '../models/user.dart';
 import '../services/search_history_service.dart';
+import '../widgets/widgets.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final User? user;
+  final VoidCallback? onLogin;
+  final VoidCallback? onRegister;
+  final VoidCallback? onLogout;
+  final VoidCallback? onOpenLiveTrip;
+
+  const HomeScreen({
+    super.key,
+    this.user,
+    this.onLogin,
+    this.onRegister,
+    this.onLogout,
+    this.onOpenLiveTrip,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -89,10 +104,20 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Column(
               children: [
-                const SizedBox(height: 40),
+                HomeHeader(
+                  user: widget.user,
+                  onLogin: widget.onLogin ??
+                      () => Navigator.pushNamed(context, '/login'),
+                  onRegister: widget.onRegister ??
+                      () => Navigator.pushNamed(context, '/register'),
+                  onLogout: widget.onLogout ?? () {},
+                  onOpenLiveTrip: widget.onOpenLiveTrip ??
+                      () => Navigator.pushNamed(context, '/live-trip'),
+                ),
+                const SizedBox(height: 16),
                 RichText(
                   textAlign: TextAlign.center,
                   text: const TextSpan(
@@ -273,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   'Search hotels, restaurants, and attractions',
                   onTap: () => Navigator.pushNamed(context, '/find-places'),
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 100),
               ],
             ),
           ),

@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'core/theme/app_theme.dart';
 import 'models/user.dart';
 import 'services/auth_service.dart';
-import 'screens/home_screen.dart';
-import 'screens/splash_screen.dart';
-import 'screens/onboarding_screen.dart';
-import 'screens/search_screen.dart';
-import 'screens/find_places_screen.dart';
-import 'screens/login_screen.dart';
-import 'screens/register_screen.dart';
 import 'screens/about_screen.dart';
+import 'screens/ai_assistant_screen.dart';
+import 'screens/explore_tab_screen.dart';
+import 'screens/find_guide_screen.dart';
+import 'screens/find_places_screen.dart';
+import 'screens/live_trip_screen.dart';
+import 'screens/login_screen.dart';
+import 'screens/main_scaffold.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/register_screen.dart';
+import 'screens/search_screen.dart';
+import 'screens/splash_screen.dart';
+import 'screens/widget_gallery_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -68,20 +74,7 @@ class _MrGuideAppState extends State<MrGuideApp> {
     return MaterialApp(
       title: 'Mr. Guide',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primaryColor: const Color(0xFFFFD700),
-        scaffoldBackgroundColor: const Color(0xFF0D1B2A),
-        colorScheme: const ColorScheme.dark(
-          primary: Color(0xFFFFD700),
-          surface: Color(0xFF1B2838),
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1B2838),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-      ),
+      theme: AppTheme.darkTheme,
       initialRoute: '/splash',
       onGenerateRoute: (settings) {
         switch (settings.name) {
@@ -91,7 +84,7 @@ class _MrGuideAppState extends State<MrGuideApp> {
             return MaterialPageRoute(builder: (_) => const OnboardingScreen());
           case '/home':
             return MaterialPageRoute(
-              builder: (_) => _MainScaffold(
+              builder: (_) => MainScaffold(
                 user: _user,
                 onLogout: _logout,
                 onLogin: _setUser,
@@ -114,98 +107,20 @@ class _MrGuideAppState extends State<MrGuideApp> {
             );
           case '/about':
             return MaterialPageRoute(builder: (_) => const AboutScreen());
+          case '/ai-assistant':
+            return MaterialPageRoute(builder: (_) => const AiAssistantScreen());
+          case '/live-trip':
+            return MaterialPageRoute(builder: (_) => const LiveTripScreen());
+          case '/guides':
+            return MaterialPageRoute(builder: (_) => const FindGuideScreen());
+          case '/explore':
+            return MaterialPageRoute(builder: (_) => const ExploreTabScreen());
+          case '/widget-gallery':
+            return MaterialPageRoute(builder: (_) => const WidgetGalleryScreen());
           default:
             return MaterialPageRoute(builder: (_) => const SplashScreen());
         }
       },
-    );
-  }
-}
-
-class _MainScaffold extends StatefulWidget {
-  final User? user;
-  final VoidCallback onLogout;
-  final Function(User) onLogin;
-
-  const _MainScaffold({
-    required this.user,
-    required this.onLogout,
-    required this.onLogin,
-  });
-
-  @override
-  State<_MainScaffold> createState() => _MainScaffoldState();
-}
-
-class _MainScaffoldState extends State<_MainScaffold> {
-  int _currentIndex = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    final pages = [const HomeScreen(), const AboutScreen()];
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Mr. Guide',
-          style: TextStyle(
-            color: Color(0xFFFFD700),
-            fontWeight: FontWeight.bold,
-            fontSize: 22,
-          ),
-        ),
-        backgroundColor: const Color(0xFF1B2838),
-        actions: [
-          if (widget.user != null) ...[
-            Center(
-              child: Padding(
-                padding: const EdgeInsets.only(right: 8),
-                child: Text(
-                  'Hi, ${widget.user!.username}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: widget.onLogout,
-              child: const Text(
-                'Logout',
-                style: TextStyle(color: Colors.redAccent, fontSize: 13),
-              ),
-            ),
-          ] else ...[
-            TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/login'),
-              child: const Text(
-                'Login',
-                style: TextStyle(color: Color(0xFFFFD700), fontSize: 13),
-              ),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pushNamed(context, '/register'),
-              child: const Text(
-                'Register',
-                style: TextStyle(color: Colors.white70, fontSize: 13),
-              ),
-            ),
-          ],
-        ],
-      ),
-      body: pages[_currentIndex],
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        onTap: (i) => setState(() => _currentIndex = i),
-        backgroundColor: const Color(0xFF1B2838),
-        selectedItemColor: const Color(0xFFFFD700),
-        unselectedItemColor: Colors.white38,
-        items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home), label: 'Home'),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.info_outline),
-            label: 'About',
-          ),
-        ],
-      ),
     );
   }
 }

@@ -119,7 +119,7 @@ class AboutScreen extends StatelessWidget {
             _contactItem(Icons.location_on_outlined,
                 'Faculty of Engineering, University of Ruhuna, Hapugala, Galle, Sri Lanka',
                 null),
-            const SizedBox(height: 40),
+            const SizedBox(height: 100),
           ],
         ),
       ),
