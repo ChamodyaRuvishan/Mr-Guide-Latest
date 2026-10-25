@@ -164,6 +164,14 @@ class AppTypography {
     color: AppColors.textPrimary,
   );
 
+  // Body small
+  static const TextStyle bodySmall = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textSecondary,
+    height: 1.4,
+  );
+
   // Caption
   static const TextStyle caption = TextStyle(
     fontSize: 12,

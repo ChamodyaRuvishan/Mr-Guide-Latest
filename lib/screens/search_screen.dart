@@ -5,7 +5,9 @@ import 'package:geolocator/geolocator.dart';
 import '../config/api_config.dart';
 import '../models/place.dart';
 import '../services/map_service.dart';
+import '../services/place_service.dart';
 import '../services/search_history_service.dart';
+import '../widgets/place_details_sheet.dart';
 
 class SearchScreen extends StatefulWidget {
   final String? initialQuery;
@@ -34,6 +36,9 @@ class _SearchScreenState extends State<SearchScreen> {
   String _travelMode = 'car';
   bool _isTripRoute = false;
   final List<Place> _destinations = [];
+  String _sortBy = 'relevance'; // 'relevance', 'distance', 'rating'
+  String _selectedCategory = 'all';
+  bool _optimizingRoute = false;
 
   // Start location
   LatLng? _startLocation;
@@ -110,7 +115,7 @@ class _SearchScreenState extends State<SearchScreen> {
 
     setState(() {
       _searchLoading = true;
-      _searchStatus = 'Searching in Sri Lanka...';
+      _searchStatus = 'Searching places in Sri Lanka...';
       _places = [];
       _selectedPlace = null;
       _route = null;
@@ -120,20 +125,241 @@ class _SearchScreenState extends State<SearchScreen> {
       _isTripRoute = false;
     });
 
-    final results = await MapService.searchPlaces(normalizedQuery);
+    try {
+      // Parallel fetch from backend DB and map geocoding service
+      final responses = await Future.wait([
+        PlaceService.searchBackendPlaces(normalizedQuery),
+        MapService.searchPlaces(normalizedQuery),
+      ]);
 
-    setState(() {
-      _places = results;
-      _searchLoading = false;
-      if (results.isNotEmpty) {
-        _searchStatus =
-            'Found ${results.length} place${results.length != 1 ? 's' : ''} in Sri Lanka';
-        _mapCenter = LatLng(results[0].lat, results[0].lng);
-        _fitBoundsToPlaces();
-      } else {
-        _searchStatus = 'No places found for "$query" in Sri Lanka';
+      final backendPlaces = responses[0];
+      final mapPlaces = responses[1];
+
+      // Merge results avoiding duplicate coordinates
+      final combined = <Place>[...backendPlaces];
+      for (final p in mapPlaces) {
+        final exists = combined.any((cp) =>
+            cp.id == p.id ||
+            (cp.name.toLowerCase() == p.name.toLowerCase() &&
+                (cp.lat - p.lat).abs() < 0.01 &&
+                (cp.lng - p.lng).abs() < 0.01));
+        if (!exists) {
+          combined.add(p);
+        }
       }
+
+      setState(() {
+        _places = combined;
+        _searchLoading = false;
+        if (combined.isNotEmpty) {
+          _searchStatus =
+              'Found ${combined.length} place${combined.length != 1 ? 's' : ''} in Sri Lanka';
+          _mapCenter = LatLng(combined[0].lat, combined[0].lng);
+          _fitBoundsToPlaces();
+        } else {
+          _searchStatus = 'No places found for "$query" in Sri Lanka';
+        }
+      });
+
+      _enrichRatings(combined);
+    } catch (e) {
+      // Fallback
+      final fallbackResults = await MapService.searchPlaces(normalizedQuery);
+      setState(() {
+        _places = fallbackResults;
+        _searchLoading = false;
+        if (fallbackResults.isNotEmpty) {
+          _searchStatus = 'Found ${fallbackResults.length} places';
+          _fitBoundsToPlaces();
+        } else {
+          _searchStatus = 'No places found for "$query"';
+        }
+      });
+    }
+  }
+
+  void _selectCategory(String category) {
+    setState(() => _selectedCategory = category);
+    if (category == 'all') {
+      if (_searchController.text.trim().isNotEmpty) {
+        _searchPlaces(_searchController.text.trim());
+      } else {
+        _searchNearbyCategory('all');
+      }
+    } else {
+      _searchNearbyCategory(category);
+    }
+  }
+
+  Future<void> _searchNearbyCategory(String category) async {
+    setState(() {
+      _searchLoading = true;
+      _searchStatus = 'Discovering $category in Sri Lanka...';
+      _places = [];
+      _selectedPlace = null;
+      _route = null;
+      _routeDistance = null;
+      _routeDuration = null;
+      _directions = [];
+      _isTripRoute = false;
     });
+
+    final targetLat = _startLocation?.latitude ?? _mapCenter.latitude;
+    final targetLng = _startLocation?.longitude ?? _mapCenter.longitude;
+
+    try {
+      List<Place> results = await PlaceService.getNearbyPlaces(
+        lat: targetLat,
+        lng: targetLng,
+        radius: 60,
+        category: category == 'all' ? null : category,
+      );
+
+      if (results.isEmpty && category != 'all') {
+        results = await MapService.searchPlaces('$category Sri Lanka', limit: 12);
+      }
+
+      setState(() {
+        _places = results;
+        _searchLoading = false;
+        if (results.isNotEmpty) {
+          _searchStatus = 'Found ${results.length} places for $category';
+          _fitBoundsToPlaces();
+        } else {
+          _searchStatus = 'No nearby places found for $category';
+        }
+      });
+
+      _enrichRatings(results);
+    } catch (_) {
+      setState(() {
+        _searchLoading = false;
+        _searchStatus = 'Failed to load places for $category';
+      });
+    }
+  }
+
+  void _enrichRatings(List<Place> placesList) {
+    for (var i = 0; i < placesList.length && i < 10; i++) {
+      final p = placesList[i];
+      if (p.rating == null) {
+        final idToFetch = p.googlePlaceId ?? (p.id.isNotEmpty ? p.id : null);
+        if (idToFetch != null) {
+          PlaceService.getPlaceReviews(idToFetch).then((rev) {
+            if (mounted && rev['avgRating'] != null && (rev['avgRating'] as num) > 0) {
+              setState(() {
+                final idx = _places.indexWhere((x) => x.id == p.id);
+                if (idx != -1) {
+                  _places[idx] = _places[idx].copyWith(
+                    rating: (rev['avgRating'] as num).toDouble(),
+                    userRatingsTotal: rev['totalCount'] as int?,
+                  );
+                }
+              });
+            }
+          });
+        }
+      }
+    }
+  }
+
+  List<Place> get _sortedPlaces {
+    if (_places.isEmpty) return [];
+    final list = List<Place>.from(_places);
+
+    if (_sortBy == 'distance' && _startLocation != null) {
+      list.sort((a, b) {
+        final distA = MapService.calculateDistance(
+          _startLocation!.latitude,
+          _startLocation!.longitude,
+          a.lat,
+          a.lng,
+        );
+        final distB = MapService.calculateDistance(
+          _startLocation!.latitude,
+          _startLocation!.longitude,
+          b.lat,
+          b.lng,
+        );
+        return distA.compareTo(distB);
+      });
+    } else if (_sortBy == 'rating') {
+      list.sort((a, b) {
+        final rA = a.rating ?? 0.0;
+        final rB = b.rating ?? 0.0;
+        return rB.compareTo(rA);
+      });
+    }
+    return list;
+  }
+
+  void _openPlaceDetails(Place place) {
+    setState(() => _selectedPlace = place);
+    PlaceDetailsSheet.show(
+      context,
+      place: place,
+      onGetDirections: () => _getDirections(place),
+      onToggleTrip: () {
+        if (_destinations.any((d) => d.id == place.id)) {
+          _removeDestination(place);
+        } else {
+          _addDestination(place);
+        }
+      },
+    );
+  }
+
+  Future<void> _optimizeTripRoute() async {
+    if (_startLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please set your starting location first'),
+        ),
+      );
+      setState(() => _showStartSearch = true);
+      return;
+    }
+    if (_destinations.length < 2) return;
+
+    setState(() => _optimizingRoute = true);
+
+    final startPlace = Place(
+      id: 'start',
+      name: _startLocationName,
+      lat: _startLocation!.latitude,
+      lng: _startLocation!.longitude,
+      address: '',
+      type: 'start',
+    );
+
+    final optimized = await PlaceService.optimizeRoute(
+      destinations: _destinations,
+      startLocation: startPlace,
+    );
+
+    setState(() => _optimizingRoute = false);
+
+    if (optimized != null && optimized.isNotEmpty) {
+      setState(() {
+        _destinations.clear();
+        _destinations.addAll(optimized);
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Route optimized for shortest travel distance!'),
+            backgroundColor: Color(0xFF00C853),
+          ),
+        );
+      }
+      _buildTripRoute();
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not optimize route')),
+        );
+      }
+    }
   }
 
   void _fitBoundsToPlaces() {
@@ -493,7 +719,7 @@ class _SearchScreenState extends State<SearchScreen> {
             }),
 
             // Search result markers
-            ..._places.asMap().entries.map((entry) {
+            ..._sortedPlaces.asMap().entries.map((entry) {
               final i = entry.key;
               final place = entry.value;
               final isSelected = _selectedPlace?.id == place.id;
@@ -502,7 +728,7 @@ class _SearchScreenState extends State<SearchScreen> {
                 width: 36,
                 height: 36,
                 child: GestureDetector(
-                  onTap: () => _getDirections(place),
+                  onTap: () => _openPlaceDetails(place),
                   child: _buildMarker(
                     isSelected
                         ? const Color(0xFF2979FF)
@@ -559,61 +785,144 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   Widget _buildTopSearchBar() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF1B2838).withValues(alpha: 0.95),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.3),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white),
-            onPressed: () => Navigator.pop(context),
-          ),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              style: const TextStyle(color: Colors.white, fontSize: 15),
-              decoration: const InputDecoration(
-                hintText: 'Search places in Sri Lanka...',
-                hintStyle: TextStyle(color: Colors.white38),
-                border: InputBorder.none,
+    final categories = [
+      {'id': 'all', 'label': 'All Places', 'icon': Icons.explore},
+      {'id': 'attraction', 'label': 'Attractions', 'icon': Icons.attractions},
+      {'id': 'beach', 'label': 'Beaches', 'icon': Icons.beach_access},
+      {'id': 'restaurant', 'label': 'Food & Cafe', 'icon': Icons.restaurant},
+      {'id': 'hotel', 'label': 'Hotels', 'icon': Icons.hotel},
+      {'id': 'temple', 'label': 'Temples & Heritage', 'icon': Icons.account_balance},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFF1B2838).withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
               ),
-              onSubmitted: (q) {
-                if (q.trim().isNotEmpty) _searchPlaces(q.trim());
-              },
-            ),
+            ],
           ),
-          if (_searchLoading)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Color(0xFFFFD700),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back, color: Colors.white),
+                onPressed: () => Navigator.pop(context),
+              ),
+              Expanded(
+                child: TextField(
+                  controller: _searchController,
+                  style: const TextStyle(color: Colors.white, fontSize: 15),
+                  decoration: const InputDecoration(
+                    hintText: 'Search places in Sri Lanka...',
+                    hintStyle: TextStyle(color: Colors.white38),
+                    border: InputBorder.none,
+                  ),
+                  onSubmitted: (q) {
+                    if (q.trim().isNotEmpty) _searchPlaces(q.trim());
+                  },
                 ),
               ),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.search, color: Color(0xFFFFD700)),
-              onPressed: () {
-                if (_searchController.text.trim().isNotEmpty) {
-                  _searchPlaces(_searchController.text.trim());
-                }
-              },
-            ),
-        ],
-      ),
+              if (_searchLoading)
+                const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFFFFD700),
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.search, color: Color(0xFFFFD700)),
+                  onPressed: () {
+                    if (_searchController.text.trim().isNotEmpty) {
+                      _searchPlaces(_searchController.text.trim());
+                    }
+                  },
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 34,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, idx) {
+              final cat = categories[idx];
+              final isSelected = _selectedCategory == cat['id'];
+              return GestureDetector(
+                onTap: () {
+                  final catId = cat['id'] as String;
+                  if (_selectedCategory == catId && catId != 'all') {
+                    _selectCategory('all');
+                  } else {
+                    _selectCategory(catId);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? const Color(0xFFFFCC00)
+                        : const Color(0xFF1B2838).withValues(alpha: 0.92),
+                    borderRadius: BorderRadius.circular(17),
+                    border: Border.all(
+                      color: isSelected
+                          ? const Color(0xFFFFCC00)
+                          : Colors.white.withValues(alpha: 0.15),
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 4,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        cat['icon'] as IconData,
+                        size: 14,
+                        color: isSelected
+                            ? const Color(0xFF0A1020)
+                            : const Color(0xFFFFCC00),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        cat['label'] as String,
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFF0A1020)
+                              : Colors.white,
+                          fontSize: 12,
+                          fontWeight:
+                              isSelected ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -708,12 +1017,65 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
             ),
 
-          ..._places.asMap().entries.map((entry) {
+          // Results Sorting Bar
+          if (_places.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  const Text(
+                    'Sort:',
+                    style: TextStyle(
+                      color: Colors.white54,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _buildSortChip('relevance', 'Relevance'),
+                  const SizedBox(width: 6),
+                  _buildSortChip('distance', 'Nearest'),
+                  const SizedBox(width: 6),
+                  _buildSortChip('rating', 'Top Rated'),
+                ],
+              ),
+            ),
+
+          ..._sortedPlaces.asMap().entries.map((entry) {
             final i = entry.key;
             final place = entry.value;
             return _buildPlaceCard(i, place);
           }),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSortChip(String id, String label) {
+    final isSelected = _sortBy == id;
+    return GestureDetector(
+      onTap: () => setState(() => _sortBy = id),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? const Color(0xFFFFCC00).withValues(alpha: 0.2)
+              : Colors.white.withValues(alpha: 0.05),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected
+                ? const Color(0xFFFFCC00)
+                : Colors.white.withValues(alpha: 0.1),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFFFFCC00) : Colors.white70,
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+          ),
+        ),
       ),
     );
   }
@@ -1059,6 +1421,40 @@ class _SearchScreenState extends State<SearchScreen> {
             }).toList(),
           ),
         const SizedBox(height: 10),
+        if (_destinations.length >= 2) ...[
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _optimizingRoute ? null : _optimizeTripRoute,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFFFD700),
+                side: const BorderSide(color: Color(0xFFFFD700)),
+                padding: const EdgeInsets.symmetric(vertical: 11),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: _optimizingRoute
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Color(0xFFFFD700),
+                      ),
+                    )
+                  : const Icon(Icons.auto_awesome, size: 18),
+              label: Text(
+                _optimizingRoute
+                    ? 'Optimizing Stops...'
+                    : 'Optimize Route (Shortest Path)',
+                style:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
@@ -1328,139 +1724,216 @@ class _SearchScreenState extends State<SearchScreen> {
       ).toStringAsFixed(1);
     }
 
-    return GestureDetector(
-      onTap: () => _getDirections(place),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: isSelected
+            ? const Color(0xFF2979FF).withValues(alpha: 0.15)
+            : const Color(0xFF111B2E),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
           color: isSelected
-              ? const Color(0xFF2979FF).withValues(alpha: 0.15)
-              : Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: isSelected
-                ? const Color(0xFF2979FF)
-                : Colors.white.withValues(alpha: 0.08),
-          ),
+              ? const Color(0xFF2979FF)
+              : Colors.white.withValues(alpha: 0.08),
         ),
-        child: Row(
-          children: [
-            Container(
-              width: 32,
-              height: 32,
-              decoration: BoxDecoration(
-                color: isSelected
-                    ? const Color(0xFF2979FF)
-                    : const Color(0xFFE53935),
-                shape: BoxShape.circle,
-              ),
-              child: Center(
-                child: Text(
-                  '${index + 1}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => _openPlaceDetails(place),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    place.name,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? const Color(0xFF2979FF)
+                          : const Color(0xFFE53935),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Center(
+                      child: Text(
+                        '${index + 1}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    place.address,
-                    style: const TextStyle(color: Colors.white38, fontSize: 11),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      if (place.type.isNotEmpty)
-                        Container(
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            place.type,
-                            style: const TextStyle(
-                              color: Colors.white38,
-                              fontSize: 10,
-                            ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          place.name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
                           ),
                         ),
-                      if (distance != null) ...[
-                        const SizedBox(width: 8),
-                        Icon(
+                        if (place.address.isNotEmpty) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            place.address,
+                            style: const TextStyle(
+                              color: Colors.white60,
+                              fontSize: 12,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Badges & Actions row
+              Row(
+                children: [
+                  if (place.rating != null && place.rating! > 0) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 3,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFCC00).withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.star,
+                            color: Color(0xFFFFCC00),
+                            size: 13,
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            place.rating!.toStringAsFixed(1),
+                            style: const TextStyle(
+                              color: Color(0xFFFFCC00),
+                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                            ),
+                          ),
+                          if (place.userRatingsTotal != null &&
+                              place.userRatingsTotal! > 0)
+                            Text(
+                              ' (${place.userRatingsTotal})',
+                              style: const TextStyle(
+                                color: Colors.white54,
+                                fontSize: 10,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  if (distance != null) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
                           Icons.location_on,
                           color: Colors.white38,
-                          size: 12,
+                          size: 13,
                         ),
                         const SizedBox(width: 2),
                         Text(
                           '$distance km',
                           style: const TextStyle(
-                            color: Colors.white38,
+                            color: Colors.white60,
                             fontSize: 11,
                           ),
                         ),
                       ],
-                    ],
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  const Spacer(),
+                  // Info & Reviews button
+                  OutlinedButton.icon(
+                    onPressed: () => _openPlaceDetails(place),
+                    icon: const Icon(Icons.reviews_outlined, size: 14),
+                    label: const Text('Details', style: TextStyle(fontSize: 11)),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFFFFCC00),
+                      side: BorderSide(
+                        color: const Color(0xFFFFCC00).withValues(alpha: 0.4),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Directions button
+                  ElevatedButton.icon(
+                    onPressed: () => _getDirections(place),
+                    icon: const Icon(Icons.directions, size: 14),
+                    label: const Text('Go', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF2979FF),
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  // Trip add/remove button
+                  GestureDetector(
+                    onTap: () {
+                      if (isInTrip) {
+                        _removeDestination(place);
+                      } else {
+                        _addDestination(place);
+                      }
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: isInTrip
+                            ? const Color(0xFF00C853).withValues(alpha: 0.2)
+                            : const Color(0xFFFFD700).withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isInTrip
+                              ? const Color(0xFF00C853)
+                              : const Color(0xFFFFD700),
+                        ),
+                      ),
+                      child: Icon(
+                        isInTrip ? Icons.check : Icons.add,
+                        size: 16,
+                        color: isInTrip
+                            ? const Color(0xFF00C853)
+                            : const Color(0xFFFFD700),
+                      ),
+                    ),
                   ),
                 ],
               ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios,
-              color: Colors.white24,
-              size: 16,
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: () {
-                if (isInTrip) {
-                  _removeDestination(place);
-                } else {
-                  _addDestination(place);
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: isInTrip
-                      ? const Color(0xFF00C853).withValues(alpha: 0.2)
-                      : const Color(0xFFFFD700).withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isInTrip
-                        ? const Color(0xFF00C853)
-                        : const Color(0xFFFFD700),
-                  ),
-                ),
-                child: Icon(
-                  isInTrip ? Icons.check : Icons.add,
-                  size: 16,
-                  color: isInTrip
-                      ? const Color(0xFF00C853)
-                      : const Color(0xFFFFD700),
-                ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

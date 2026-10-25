@@ -7,5 +7,6 @@ export 'feature_card.dart';
 export 'home_header.dart';
 export 'icon_badge.dart';
 export 'pill_button.dart';
+export 'place_details_sheet.dart';
 export 'section_header.dart';
 export 'status_pill.dart';
